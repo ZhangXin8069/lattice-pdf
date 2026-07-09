@@ -1,3 +1,3 @@
-# PyQCU By ZhangXin
+# LATTICE-PDF By ZhangXin
 >
-> referring to PyQCU/docs
+> referring to lattice-pdf/docs
