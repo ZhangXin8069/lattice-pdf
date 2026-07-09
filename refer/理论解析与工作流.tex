@@ -1,0 +1,782 @@
+% !TEX program = xelatex
+% ===========================================================================
+% 格点 QCD 计算质子中胶子 PDF 的理论解析与工作流
+% 编译: xelatex 理论解析与工作流.tex
+% ===========================================================================
+\documentclass[11pt,a4paper]{ctexart}
+
+% --------------- 页面设置 ---------------
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% --------------- 数学与物理 ---------------
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{bm}
+\usepackage{braket}
+\usepackage{slashed}
+
+% --------------- 图形与颜色 ---------------
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes, decorations.pathmorphing}
+
+% --------------- 表格 ---------------
+\usepackage{array,booktabs,multirow}
+
+% --------------- 超链接 ---------------
+\usepackage[hidelinks]{hyperref}
+
+% --------------- 代码 ---------------
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny,
+  commentstyle=\color{gray},
+  keywordstyle=\color{blue},
+  stringstyle=\color{red},
+}
+
+% --------------- 自定义命令 ---------------
+\newcommand{\Fmunu}{F_{\mu\nu}}
+\newcommand{\Ftmunu}{\tilde{F}_{\mu\nu}}
+\newcommand{\Ftzmu}{\tilde{F}^{\mu z}}
+\newcommand{\eps}{\varepsilon}
+\newcommand{\LaMET}{\text{LaMET}}
+\newcommand{\MSbar}{$\overline{\text{MS}}$}
+\newcommand{\QCD}{\text{QCD}}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\vev}[1]{\langle #1 \rangle}
+\newcommand{\abs}[1]{|#1|}
+\newcommand{\order}[1]{\mathcal{O}(#1)}
+
+% --------------- 标题 ---------------
+\title{\textbf{格点 QCD 计算质子中胶子 PDF 的理论解析与工作流}}
+\author{基于 donghx 原始代码的系统化理论整理}
+\date{2026年7月9日}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent
+本文系统阐述采用大动量有效理论（\LaMET）在格点 QCD 框架下计算质子中非极化胶子部分子分布函数（gluon PDF）的完整理论框架和计算工作流。核心思路是：利用 disconnect 图的因子化性质，将包含胶子算符的三点关联函数解耦为质子两点函数（用 momentum-smeared distillation 计算）和纯规范场的 OPE 算符期望值（Eq.~(25)），然后通过关联函数比提取坐标空间矩阵元（Eq.~(20)），最后经 Fourier 变换和微扰匹配得到光锥 PDF $g(x,\mu)$。文中给出了从格点离散化、Clover 场强张量构造、Wilson 线连接、Distillation 收缩到 quasi-PDF 重构和匹配核卷积的完整推导与算法描述。
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ===========================================================================
+\section{理论基础}
+% ===========================================================================
+
+\subsection{光锥 PDF 的定义}
+
+质子中非极化胶子的光锥 PDF $g(x,\mu^2)$ 定义为光锥关联函数的 Fourier 变换：
+\begin{equation}\label{eq:lightcone_pdf}
+g(x, \mu^2) = \int \frac{\mathrm{d}\xi^{-}}{2\pi x P^{+}} \,
+e^{-i x P^{+}\xi^{-}} \,
+\braket{P | F^{+\mu}(\xi^{-}) \, W(\xi^{-}, 0) \, \tilde{F}_{\mu}^{\;+}(0) | P}
+\end{equation}
+其中：
+\begin{itemize}
+  \item $P^{+} = (P^{0} + P^{3})/\sqrt{2}$ 为光锥坐标下的正向动量；
+  \item $\Fmunu$ 为胶子场强张量；
+  \item $\Ftmunu = \tfrac{1}{2}\eps_{\mu\nu\rho\sigma}F^{\rho\sigma}$ 为对偶场强张量；
+  \item $W(\xi^{-},0)$ 为连接 $\xi^{-}$ 与 $0$ 的光锥 Wilson 线；
+  \item $x$ 为 Bjorken-$x$（胶子携带的纵向动量分数）；
+  \item $\mu$ 为重整化标度。
+\end{itemize}
+
+\subsection{大动量有效理论（\LaMET）}
+
+\LaMET{}的核心思想是：在 Euclidean 格点上计算快速移动强子的\textbf{空间方向}关联函数（称为 quasi-PDF），然后在大的强子动量 $P_z$ 下，通过微扰匹配将其与光锥 PDF 联系起来。
+
+\begin{itemize}
+  \item \textbf{Quasi-PDF} $\tilde{q}(x, P_z)$：对空间分离的关联函数做 Fourier 变换得到；
+  \item \textbf{大动量极限} $P_z \to \infty$：quasi-PDF 趋近于光锥 PDF；
+  \item \textbf{有限动量} $P_z$：通过\textbf{因子化定理}，二者之间存在可微扰计算的匹配关系。
+\end{itemize}
+
+\LaMET{}的因子化公式为：
+\begin{equation}\label{eq:lamet_factorization}
+\tilde{q}(x, P_z) = \int_{0}^{1} \frac{\mathrm{d}y}{|y|} \,
+C\!\left(\frac{x}{y}, \frac{\mu}{P_z}\right) \,
+g(y, \mu) + \order{\frac{\Lambda_{\text{QCD}}^{2}}{P_z^{2}},\;
+\frac{\Lambda_{\text{QCD}}^{2}}{x^{2}P_z^{2}}}
+\end{equation}
+其中 $C$ 是\textbf{匹配核} (matching kernel)，可通过微扰 QCD 计算。
+
+\subsection{准 PDF 与匹配关系}
+
+对于胶子 quasi-PDF，取 $z$ 方向为 boost 方向，空间方向的 quasi-PDF 定义为：
+\begin{equation}\label{eq:quasi_pdf_def}
+\tilde{g}(x, P_z) = \int \frac{\mathrm{d}z}{2\pi x P_z} \,
+e^{i x P_z z} \, \tilde{h}(z, P_z)
+\end{equation}
+其中\textbf{坐标空间矩阵元} $\tilde{h}(z, P_z)$ 为：
+\begin{equation}\label{eq:matrix_element}
+\boxed{\tilde{h}(z, P_z) = \frac{\braket{P | O(z) | P}}{\braket{P|P}}}
+\end{equation}
+这就是 Note 中 \textbf{Eq.~(20)} 的核心内容。
+
+quasi-PDF 到光锥 PDF 的 NLO 匹配关系为（$\mu$ 为 \MSbar{}标度）：
+\begin{equation}
+\tilde{g}(x, P_z) = g(x, \mu) + \frac{\alpha_s}{2\pi}
+\int_{x}^{1} \frac{\mathrm{d}y}{y} \,
+\Delta C_{gg}\!\left(\frac{x}{y}, \frac{\mu}{P_z}\right) g(y, \mu) + \cdots
+\end{equation}
+
+\subsection{胶子 quasi-PDF 算符}
+
+胶子 unpolarized quasi-PDF 算符在空间方向上的定义为：
+\begin{equation}
+O_{\mu\nu}(z) \equiv F_{z\mu}(z\hat{n}_z) \; W(z\hat{n}_z, 0) \; \tilde{F}_{\nu}^{\;z}(0)
+\end{equation}
+其中 $\hat{n}_z$ 是空间 $z$ 方向的单位矢量。
+
+对于 unpolarized 情形，需要的指标收缩为：
+\begin{equation}\label{eq:ope_unpol}
+\boxed{O(z) = O_{\mu}^{\;\mu}(z) = F_{z\mu}(z) \, W(z, 0) \, \tilde{F}^{\mu z}(0)}
+\end{equation}
+
+\textbf{Eq.~(25)} 给出了我们具体拆解出的 OPE 算符形式——用 $F$ 和 $\tilde{F}$ 的不同 Lorentz 分量组合。在格点计算中，由于旋转对称性破缺，需要对等价方向进行平均。以 $z$ 方向 boost 为例，横向指标 $\mu \in \{x, y, t\}$ 需独立求和：
+\begin{equation}
+O_{\text{unpol}}(z) \equiv \sum_{\mu \neq z}
+\Bigl[ F_{z\mu}(z) \, W(z, 0) \, \Ftzmu(0) \Bigr]_{\text{对称化}}
+\end{equation}
+
+% ===========================================================================
+\section{格点离散化}
+% ===========================================================================
+
+\subsection{场强张量的格点构造（Clover 定义）}
+
+在格点上，场强张量 $\Fmunu$ 通过规范链接 $U_\mu(x)$ 构造。
+
+\textbf{Plaquette（方格）}在 $\mu$-$\nu$ 平面上的定义为：
+\begin{equation}
+P_{\mu\nu}(x) = U_\mu(x)\,U_\nu(x+\hat{\mu})\,U_\mu^{\dagger}(x+\hat{\nu})\,U_\nu^{\dagger}(x)
+\end{equation}
+
+\textbf{Clover 算符}通过对围绕点 $x$ 的四个 plaquette 取反对称化组合，得到 $\order{a^2}$ 改进的场强张量：
+\begin{equation}\label{eq:clover_F}
+\hat{F}_{\mu\nu}(x) = -\frac{i}{8a^{2}g_{0}}
+\Bigl( Q_{\mu\nu}(x) - Q_{\mu\nu}^{\dagger}(x) \Bigr)
+\end{equation}
+其中 $Q_{\mu\nu}$ 是 ``clover leaf''——四个 plaquette 之和：
+\begin{equation}
+Q_{\mu\nu}(x) = P_{\mu\nu}(x) + P_{\nu,-\mu}(x) + P_{-\mu,-\nu}(x) + P_{-\nu,\mu}(x)
+\end{equation}
+
+四个 plaquette 的几何排列如图所示（以点 $x$ 为中心）：
+\begin{center}
+\begin{tikzpicture}[scale=1.5, >=Stealth]
+  % 中心点
+  \filldraw (0,0) circle (1.5pt) node[below left] {$x$};
+  % 四个方向的 plaquette 简化表示
+  \draw[->, thick, blue!60] (0,0) -- (1,0) node[midway, above] {$P_{\mu\nu}$};
+  \draw[->, thick, red!60] (0,0) -- (0,1) node[midway, right] {$P_{\nu,-\mu}$};
+  \draw[->, thick, green!60] (0,0) -- (-1,0) node[midway, above] {$P_{-\mu,-\nu}$};
+  \draw[->, thick, orange!60] (0,0) -- (0,-1) node[midway, right] {$P_{-\nu,\mu}$};
+  % 坐标轴
+  \draw[->] (0,0) -- (1.5,0) node[right] {$\mu$};
+  \draw[->] (0,0) -- (0,1.5) node[above] {$\nu$};
+\end{tikzpicture}
+\end{center}
+
+在代码中取 $a=1$, $g_0=1$，Clover 场强张量为：
+\begin{equation}
+\hat{F}_{\mu\nu}(x) = -\frac{i}{8} \Bigl[
+P_{\mu\nu} + P_{\nu,-\mu} + P_{-\mu,-\nu} + P_{-\nu,\mu}
+- \text{h.c.} \Bigr]
+\end{equation}
+
+\subsection{对偶场强张量}
+
+对偶场强张量 $\Ftmunu$ 通过 Levi-Civita 张量与 $F$ 联系：
+\begin{equation}\label{eq:dual_F}
+\Ftmunu = \frac{1}{2}\,\eps_{\mu\nu\rho\sigma}\,F^{\rho\sigma}
+\end{equation}
+其中 $\eps_{\mu\nu\rho\sigma}$ 是四维完全反对称张量，约定 $\eps_{0123}=+1$。
+
+在代码中，\texttt{Tensor4} 数组实现了 $\tfrac{1}{2}\eps_{\mu\nu\rho\sigma}$：
+\begin{equation}
+\eps_{\mu\nu\rho\sigma} = \begin{cases}
++1, & (\mu,\nu,\rho,\sigma)\text{ 是 }(0,1,2,3)\text{ 的偶排列},\\
+-1, & \text{奇排列},\\
+0,  & \text{有重复指标}.
+\end{cases}
+\end{equation}
+
+\texttt{plaquette\_clover\_all\_tilde} 函数通过缩并实现 $\tilde{F}$：
+\begin{lstlisting}[language=Python]
+pla_tilde[mu, nu] = contract("opmn, mntzyxab -> optzyxab",
+                              epsilon4, pla_all)
+\end{lstlisting}
+
+\subsection{Wilson 线}
+
+连接 $0$ 和 $z\hat{n}$ 的 Wilson 线是路径有序指数：
+\begin{equation}
+W(z\hat{n}, 0) = \mathcal{P} \exp\!\left( i g_0 \int_{0}^{z} \mathrm{d}z' \, A_z(z'\hat{n}) \right)
+\end{equation}
+在格点上离散化为规范链接的乘积：
+\begin{equation}\label{eq:wilson_line}
+W(z\hat{n}_z, 0) \;\approx\; \prod_{k=0}^{z/a-1} U_z(k a \hat{n}_z)
+\end{equation}
+
+代码中正向 Wilson 线用 $U_z$ 链接连乘，反向（由 $z$ 到 $0$）用 $U_z^{\dagger}$ 连乘：
+\begin{lstlisting}[language=Python]
+# z -> 0 的 Wilson 线 (取 U_z 的共轭)
+for dz in range(delta_z):
+    ope = contract("tzyxab, tzyxcb -> tzyxac",
+                   ope, gauge[..., z_dir, :, :].conj()[rolled])
+# 0 -> z 的 Wilson 线 (U_z 正向)
+for dz in range(delta_z):
+    ope = contract("tzyxab, tzyxbc -> tzyxac",
+                   ope, gauge[..., z_dir, :, :][rolled])
+\end{lstlisting}
+
+\subsection{完整胶子算符的格点实现}
+
+完整的 nonlocal 胶子算符 $O_{\mu\nu}(z)$ 的格点表示为：
+\begin{equation}\label{eq:full_operator}
+\boxed{
+O_{\mu\nu}^{\text{lat}}(z) = \tr_c\!\left[
+\hat{F}_{z\mu}(z\hat{n}_z) \;
+\Bigl( \prod_{k=0}^{z/a-1} U_z(k a) \Bigr) \;
+\hat{\tilde{F}}_{\nu}^{\;z}(0) \;
+\Bigl( \prod_{k=z/a-1}^{0} U_z^{\dagger}(k a) \Bigr)
+\right]
+}
+\end{equation}
+
+代码中对应 \texttt{operators\_new\_z0\_mu2} 函数的五步构造法：
+\begin{enumerate}
+  \item 将 $\hat{F}_{\mu\nu}$ (plaquette) 平移到 $z$ 位置；
+  \item 从 $z$ 到 $0$ 连接 Wilson 线（$U_z$ 的共轭）；
+  \item 在 $0$ 处插入 $\hat{\tilde{F}}_{\mu_2,\nu_2}$；
+  \item 从 $0$ 到 $z$ 连接 Wilson 线（$U_z$）；
+  \item 对颜色空间取迹 $\tr_c[\cdots]$，对空间求和 $\sum_{x,y}$。
+\end{enumerate}
+
+% ===========================================================================
+\section{关联函数分解}
+% ===========================================================================
+
+\subsection{三点关联函数与 disconnect 图}
+
+需要计算的三点关联函数为：
+\begin{equation}
+C_3(\Delta t; z, P_z) = \braket{\Omega |
+\mathcal{N}(\mathbf{P}, t_{\text{sink}}) \;
+O(z; t_{\text{op}}) \;
+\bar{\mathcal{N}}(\mathbf{P}, t_{\text{src}})
+| \Omega}
+\end{equation}
+其中 $\mathcal{N}$ 是质子插值算符，$O(z)$ 是胶子 quasi-PDF 算符。
+
+对于胶子算符，只有 \textbf{disconnected 图}（quark-disconnected）有贡献：
+\begin{center}
+\begin{tikzpicture}[scale=1.2]
+  % 质子传播子 (两条水平线表示)
+  \draw[very thick] (0,1) -- (4,1) node[midway, above] {$N(t_{\text{sink}})$};
+  \draw[very thick] (0,0) -- (4,0) node[midway, below] {$\bar{N}(t_{\text{src}})$};
+  % 胶子算符 (垂直方向)
+  \draw[very thick, decorate, decoration={coil, aspect=0.5, amplitude=3pt}]
+    (2,1.5) -- (2,0.3);
+  \node at (2.5,1.2) {$O(z; t_{\text{op}})$};
+  % 断开标记
+  \draw[fill=white] (1.5,0.9) rectangle (2.5,1.1);
+  \draw[fill=white] (1.5,-0.1) rectangle (2.5,0.1);
+\end{tikzpicture}
+\end{center}
+
+\textbf{关键近似}：三点关联函数解耦为质子两点函数和 OPE 算符的乘积：
+\begin{equation}\label{eq:factorization}
+\boxed{C_3(\Delta t; z, P_z) \;\approx\; C_2(\Delta t; P_z) \cdot \vev{O(z)}_{\text{gauge}}}
+\end{equation}
+其中：
+\begin{itemize}
+  \item $C_2(\Delta t; P_z) = \vev{\mathcal{N}(t_{\text{sink}}) \bar{\mathcal{N}}(t_{\text{src}})}$ 为质子两点关联函数；
+  \item $\vev{O(z)}_{\text{gauge}}$ 为纯规范场中 OPE 算符的真空期望值。
+\end{itemize}
+
+\subsection{Eq.~(20)：矩阵元}
+
+\textbf{Eq.~(20)} 给出了要计算的矩阵元：
+\begin{equation}
+h(z, P_z) \equiv \frac{\braket{P | O(z) | P}}{\braket{P|P}}
+\end{equation}
+
+在格点上通过关联函数比提取：
+\begin{equation}\label{eq:ratio}
+h^{\text{lat}}(z, P_z; t_{\text{sep}}) =
+\frac{C_3(t_{\text{sep}}; z, P_z)}{C_2(t_{\text{sep}}; P_z)}
+\;\xrightarrow{t_{\text{sep}} \to \infty}\;
+h(z, P_z)
+\end{equation}
+在大时间分离极限下，激发态污染被压制，比值逼近基态矩阵元。
+
+利用解耦近似~\eqref{eq:factorization}：
+\begin{equation}
+h^{\text{lat}}(z, P_z) \approx \vev{O(z)}_{\text{gauge}}
+\end{equation}
+即纯规范场中 OPE 算符的期望值（对所有规范组态平均）。
+
+\subsection{Eq.~(25)：OPE 算符}
+
+\textbf{Eq.~(25)} 给出了拆分出的 OPE 算符的具体形式。
+
+对于非极化胶子：
+\begin{equation}\label{eq:ope_final}
+\boxed{O_{\text{unpol}}(z) = \sum_{\mu \neq z} \sum_{\nu \neq z} g^{\mu\nu} \;
+F_{z\mu}(z) \; W(z, 0) \; \tilde{F}_{\nu}^{\;z}(0)}
+\end{equation}
+
+实际计算中（对应 \texttt{Calc\_ope\_unpol.py} 的 MPI 并行方案），不同 Lorentz 分量分配给不同的 MPI rank：
+
+\begin{table}[htbp]
+\centering
+\caption{OPE 算符的 MPI 并行分配方案}
+\begin{tabular}{c c c c}
+\toprule
+\textbf{Rank} & \textbf{$(\mu,\nu)$} & \textbf{$(\mu_2,\nu_2)$} & \textbf{物理含义} \\
+\midrule
+0 & $(t, x)$ 或 $(t, y)$ & $(t, x)$ 或 $(t, y)$ & $F_{zt}\tilde{F}^{tz}$ \\
+1 & $(t, y)$ 或 $(t, z)$ & $(t, y)$ 或 $(t, z)$ & $F_{zt}\tilde{F}^{tz}$（另一分量）\\
+2 & $(x, y)$ & $(x, y)$ & $F_{zx}\tilde{F}^{xz}$ 或 $F_{zy}\tilde{F}^{yz}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+注意 $\mu, \nu$ 的选择取决于 Wilson 线方向 $z_{\text{dir}}$：
+\begin{itemize}
+  \item $z_{\text{dir}} = 0$ ($x$ 方向): $\nu = 1$ ($y$) 或 $\nu = 2$ ($z$)；
+  \item $z_{\text{dir}} = 1$ ($y$ 方向): $\nu = 0$ ($x$) 或 $\nu = 2$ ($z$)；
+  \item $z_{\text{dir}} = 2$ ($z$ 方向): $\nu = 0$ ($x$) 或 $\nu = 1$ ($y$)。
+\end{itemize}
+
+% ===========================================================================
+\section{Distillation 方法与动量涂抹}
+% ===========================================================================
+
+\subsection{Distillation 的基本思想}
+
+\textbf{Distillation} (Peardon et al., 2009) 是一种夸克场涂抹方法，用于构建高质量的强子插值算符。
+
+基本步骤：
+\begin{enumerate}
+  \item 计算格点 Laplace 算符的低模本征矢量 $v^{(k)}(x)$；
+  \item 用截断的本征矢量展开构建 \textbf{perambulator}——夸克传播子的子空间投影；
+  \item 所有 Wick 收缩在 $N_{\text{ev}} \times N_{\text{ev}}$ 的子空间内完成。
+\end{enumerate}
+
+夸克传播子的 Distillation 表示：
+\begin{equation}\label{eq:distillation}
+S(x, y)_{\alpha\beta}^{ab} \approx \sum_{k,l=1}^{N_{\text{ev}}}
+v^{(k)}(x) \, \tau^{(kl)}(t) \, v^{(l)\dagger}(y)
+\end{equation}
+其中 $\tau$ 是 perambulator。
+
+\textbf{优势}：
+\begin{itemize}
+  \item 计算复杂的多夸克关联函数变得可行；
+  \item 本征矢量可在不同算符之间复用；
+  \item 自然实现夸克场的涂抹，压制 UV 涨落。
+\end{itemize}
+
+\subsection{动量涂抹（Momentum Smearing）}
+
+为了在大动量 $P_z$ 下有效计算质子关联函数，使用\textbf{动量涂抹}技术：
+\begin{equation}\label{eq:momsmear}
+\tilde{v}^{(k)}(x; \mathbf{k}) = e^{i \mathbf{k} \cdot \mathbf{x}} \, v^{(k)}(x)
+\end{equation}
+其中 $\mathbf{k}$ 是涂抹动量，与物理动量 $P_z$ 匹配。
+
+代码中：
+\begin{lstlisting}[language=Python]
+phase_factor[x] = exp(-i * Mom . x * 2*pi / Nx)
+eigvecs_mom2 = contract("vxa, x -> vxa", eigvecs, phase_factor)
+\end{lstlisting}
+
+\subsection{质子两点关联函数的 Distillation 构造}
+
+质子插值算符（以 $C\gamma_5$ 为例）：
+\begin{equation}
+\mathcal{N}_\alpha(x) = \varepsilon^{abc}
+\bigl[ u^{a}(x)^T C\gamma_5 d^{b}(x) \bigr] u^{c}_\alpha(x)
+\end{equation}
+
+在 Distillation 框架下，质子两点关联函数为：
+\begin{equation}
+C_2(\Delta t; \mathbf{P}) = \sum_{t_{\text{src}}}
+\sum_{\mathbf{x},\mathbf{y}} e^{-i\mathbf{P}\cdot(\mathbf{y}-\mathbf{x})}
+\braket{\mathcal{N}(\mathbf{y}, t_{\text{sink}}) \,
+\bar{\mathcal{N}}(\mathbf{x}, t_{\text{src}})}
+\end{equation}
+
+收缩需要以下元素（代码实现）：
+\begin{enumerate}
+  \item \textbf{VVV（Baryon Block）}：三夸克本征矢量的动量投影组合；
+  \item \textbf{Perambulator} $\tau(t_{\text{sink}}, t_{\text{src}})$：夸克传播子的子空间表示；
+  \item \textbf{Dirac 矩阵插入}：$C\gamma_5$ 或 $C\gamma_5\gamma_\mu$ 插值算符。
+\end{enumerate}
+
+核心收缩公式：
+\begin{align}
+C_2^{ij}(t_{\text{sink}}, t_{\text{src}}) &=
+\Phi_{abc} \, \tau^{ad}_{i\alpha} \,
+[\Gamma \tau \Gamma]^{be}_{\beta\gamma} \,
+\tau^{cf}_{j\delta} \, \Phi_{def}^{*} \notag\\
+&\quad - \Phi_{abc} \, \tau^{af}_{i\alpha} \,
+[\Gamma \tau \Gamma]^{be}_{\beta\gamma} \,
+\tau^{cd}_{j\delta} \, \Phi_{def}^{*}
+\end{align}
+其中 $\Phi_{abc}$ 是 VVV 张量，包含三个本征矢量的色收缩和动量相位因子。
+
+\textbf{VVV 收缩细节}（\texttt{VVV\_Calc\_cupy} 函数）：
+\begin{equation}\label{eq:vvv}
+\Phi_{abc}(t, \mathbf{P}) = \sum_{\mathbf{x}} e^{-i\mathbf{P}\cdot\mathbf{x}} \,
+\varepsilon_{ijk} \, v^{(a)}_i(\mathbf{x}, t) \,
+v^{(b)}_j(\mathbf{x}, t) \, v^{(c)}_k(\mathbf{x}, t)
+\end{equation}
+其中 $i,j,k \in \{0,1,2\}$ 为色指标，$a,b,c$ 为本征矢量指标。
+
+% ===========================================================================
+\section{完整计算工作流}
+% ===========================================================================
+
+\subsection{工作流概览}
+
+\begin{center}
+\fbox{%
+\begin{minipage}{0.92\textwidth}
+\small
+\begin{enumerate}
+  \item[\textbf{(1)}] \textbf{数据准备}
+  \begin{itemize}
+    \item 生成/读取规范组态 (gauge configurations)
+    \item 计算 Laplace 本征矢量 (eigenvectors)
+    \item 计算 perambulator（动量涂抹版本）
+    \item 计算 VVV (baryon block)
+  \end{itemize}
+  \item[\textbf{(2)}] \textbf{OPE 计算}（\texttt{Calc\_ope\_unpol.py}）
+  \begin{itemize}
+    \item 读取规范链接 $U_\mu(x)$
+    \item 计算 clover plaquette $\to \Fmunu$
+    \item 构造对偶场强 $\Ftmunu$
+    \item 构造 Wilson 线连接
+    \item 计算 $O(z) = \tr[F(z) W(z,0) \tilde{F}(0) W(0,z)]$
+    \item 对不同 $z$、Lorentz 指标求和/平均
+  \end{itemize}
+  \item[\textbf{(3)}] \textbf{质子 2pt 计算}（\texttt{2pt\_proton\_Cg5gmu\_...\_gpu.py}）
+  \begin{itemize}
+    \item GPU 加速的 baryon block 构造（动量涂抹）
+    \item 读取 perambulator
+    \item Wick 收缩 $\to C_2(\Delta t, \mathbf{P})$
+    \item 宇称投影（正/负宇称）
+  \end{itemize}
+  \item[\textbf{(4)}] \textbf{矩阵元提取}
+  \begin{itemize}
+    \item 三点函数/两点函数比值
+    \item 大时间分离极限 $\to$ 基态矩阵元 $h(z, P_z)$
+    \item Jackknife / Bootstrap 统计分析
+  \end{itemize}
+  \item[\textbf{(5)}] \textbf{quasi-PDF 重构与匹配}
+  \begin{itemize}
+    \item Fourier 变换: $h(z) \to \tilde{g}(x, P_z)$
+    \item 匹配核卷积: $\tilde{g}(x, P_z) \to g(x, \mu)$
+    \item 系统误差分析
+  \end{itemize}
+\end{enumerate}
+\end{minipage}%
+}
+\end{center}
+
+\subsection{数据准备}
+
+\textbf{输入数据}：
+
+\begin{table}[htbp]
+\centering
+\caption{计算所需输入数据}
+\begin{tabular}{c l l}
+\toprule
+\textbf{数据类型} & \textbf{说明} & \textbf{维度} \\
+\midrule
+\texttt{gauge}    & SU(3) 规范链接 $U_\mu(x)$ & $(N_t, N_z, N_y, N_x, 4, 3, 3)$ \\
+\texttt{eigvecs}  & Laplace 本征矢量 $v^{(k)}(x)$ & $(N_{\text{ev}}, N_x N_y N_z, 3)$ \\
+\texttt{peram}    & Perambulator $\tau$ & $(N_t, 4, 4, N_{\text{ev}}, N_{\text{ev}})$ \\
+\texttt{VVV}      & Baryon block $\Phi_{abc}$ & $(N_{\text{ev}}, N_{\text{ev}}, N_{\text{ev}})$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{典型参数}：
+\begin{itemize}
+  \item 格点大小：$L^3 \times T = 32^3 \times 64$；
+  \item 本征矢量数：$N_{\text{ev}} = 100$；
+  \item 动量：$P_z = 2\pi n_z / L$，$n_z = 3,4,5,6,7,8$；
+  \item 动量涂抹：$\mathbf{k} = (0, 0, -3)$；
+  \item Wilson 线最大长度：$z_{\text{max}} \sim 10\text{--}15$ 格距。
+\end{itemize}
+
+\subsection{OPE 计算}
+
+\textbf{目标}：计算 $\vev{O(z)}$，即在纯规范组态上对 OPE 算符求平均。
+
+\textbf{算法流程}（对应 \texttt{Calc\_ope\_unpol.py}）：
+\begin{lstlisting}[language=Python, caption=OPE 计算核心循环]
+# 对每个 (mu, nu) 分量 (MPI 并行)
+for mu, nu in lorentz_pairs:
+    # 1. 计算 clover 场强张量 F
+    F_all[mu, nu] = plaquette_clover(gauge, mu, nu)
+    # 2. 对偶变换得到 F_tilde
+    F_tilde = contract("opmn, mntzyxab -> optzyxab", epsilon, F_all)
+
+for dz in range(delta_z):
+    # 3. 平移 F 到 z = dz
+    ope = np.roll(F_all[mu, nu], -dz, axis=3-z_dir)
+    # 4. Wilson 线: z -> 0 (U_z 的共轭)
+    for step in range(dz):
+        ope = contract("tzyxab, tzyxcb -> tzyxac",
+                       ope, gauge_rolled_conj[..., z_dir, :, :])
+    # 5. 在 z=0 处插入 F_tilde
+    ope = contract("tzyxab, tzyxbc -> tzyxac",
+                   ope, F_tilde[mu2, nu2])
+    # 6. Wilson 线: 0 -> z (U_z 正向)
+    for step in range(dz):
+        ope = contract("tzyxab, tzyxbc -> tzyxac",
+                       ope, gauge_rolled[..., z_dir, :, :])
+    # 7. 取颜色迹 + 空间求和
+    ops[t, dz] = np.sum(np.trace(ope, axis1=4, axis2=5),
+                         axis=(1,2,3))
+\end{lstlisting}
+
+\subsection{质子 2pt 计算}
+
+\textbf{目标}：计算动量投影的质子两点关联函数 $C_2(\Delta t, \mathbf{P})$。
+
+\textbf{GPU 加速策略}：
+\begin{itemize}
+  \item 使用 CuPy 进行 GPU 上的张量缩并；
+  \item VVV 的动量投影在 GPU 上逐层分片计算（显存限制）；
+  \item Perambulator 按 $t_{\text{src}}$ 分别在 GPU 上加载。
+\end{itemize}
+
+\textbf{算法流程}（对应 \texttt{2pt\_proton\_Cg5gmu\_...\_gpu.py}）：
+\begin{lstlisting}[language=Python, caption=质子 2pt 核心收缩]
+for Px in [3, 4, 5, 6, 7, 8]:
+    # 1. 计算 VVV (动量涂抹)
+    VVV_sink[t] = sum_x exp(-i*P*x) * epsilon_ijk * v^a_i(x) * v^b_j(x) * v^c_k(x)
+
+    for t_src in range(Nt):
+        # 2. 加载 perambulator
+        peram = read_perambulator(peram_dir, conf_id, Nt, Nev1, t_src)
+        # 3. Dirac 矩阵插入: Gamma = C*gamma5*gamma_mu
+        CG5_tau_CG5 = contract("gh, thkbe, jk -> tgjbe", Gamma, peram, Gamma)
+
+        for t_snk in range(Nt):
+            # 4. 收缩 (直接项 - 交换项)
+            C2[t_snk, t_src] = contract("abc, gjad, gjbe, ilcf, def -> il",
+                VVV_sink[t_snk], peram[t_snk],
+                CG5_tau_CG5[t_snk], peram[t_snk],
+                VVV_sink[t_src].conj())
+            - contract("abc, glaf, gjbe, ijcd, def -> il", ...)
+    # 5. 宇称投影
+    C2_pp = contract("li, yxil -> yx", P_plus, C2)
+\end{lstlisting}
+
+\subsection{矩阵元提取}
+
+从关联函数中提取胶子 quasi-PDF 矩阵元的步骤：
+
+\begin{enumerate}
+  \item \textbf{计算有效矩阵元}：
+  \begin{equation}
+  h^{\text{eff}}(z, P_z; \Delta t) = \frac{C_3(\Delta t; z, P_z)}{C_2(\Delta t; P_z)}
+  \end{equation}
+  在 disconnect 近似下：
+  \begin{equation}
+  h^{\text{eff}}(z, P_z; \Delta t) \approx \vev{O(z)}_{\Delta t}
+  \end{equation}
+
+  \item \textbf{Plateau 拟合}：选择 $\Delta t$ 足够大的区域：
+  \begin{equation}
+  h(z, P_z) = \lim_{\Delta t \to \infty} h^{\text{eff}}(z, P_z; \Delta t)
+  \approx \text{const}
+  \end{equation}
+
+  \item \textbf{统计平均}：
+  \begin{equation}
+  h(z, P_z) = \frac{1}{N_{\text{conf}}} \sum_{\text{conf}} \vev{O(z)}_{\text{conf}}
+  \end{equation}
+
+  \item \textbf{误差估计}：使用 Jackknife 方法。
+\end{enumerate}
+
+\subsection{Fourier 变换与匹配}
+
+\textbf{坐标空间 $\to$ 动量空间}：
+\begin{equation}\label{eq:fourier}
+\boxed{\tilde{g}(x, P_z) = \frac{2P_z}{x}
+\int_{0}^{z_{\text{max}}} \mathrm{d}z \;
+h_R(z, P_z) \, \sin(x P_z z)}
+\end{equation}
+其中 $h_R(z, P_z)$ 是重整化后的矩阵元。
+
+\textbf{重整化}：在混合方案中：
+\begin{itemize}
+  \item 短距离 ($z < z_s$)：比值重整化 $h_R(z) = h(z) / h(z=0)$；
+  \item 长距离 ($z > z_s$)：不做重整化（或使用自重整化方案）。
+\end{itemize}
+
+\textbf{匹配到光锥 PDF}（NLO 微扰匹配核）：
+\begin{equation}\label{eq:matching}
+\boxed{g(x, \mu) = \tilde{g}(x, P_z) - \frac{\alpha_s}{2\pi}
+\int_{x}^{1} \frac{\mathrm{d}y}{y} \,
+\Delta C_{gg}\!\left(\frac{x}{y}, \frac{\mu}{P_z}\right)
+\tilde{g}(y, P_z)}
+\end{equation}
+匹配核 $\Delta C_{gg}$ 可以微扰计算到 NLO。
+
+% ===========================================================================
+\section{参考文献}
+% ===========================================================================
+
+\subsection*{核心参考文献}
+\begin{enumerate}
+  \item \textbf{Note of gluon PDFs}——内部理论笔记，包含 Eq.~(20) 和 Eq.~(25) 的核心推导。
+  \item \textbf{Unpolarized gluon PDF of the nucleon from lattice QCD in the continuum limit}——连续极限下的非极化胶子 PDF。
+  \item \textbf{First Nucleon Gluon PDF from Large Momentum Effective Theory}——首个 \LaMET{}胶子 PDF 计算。
+\end{enumerate}
+
+\subsection*{\LaMET{}理论}
+\begin{enumerate}\setcounter{enumi}{3}
+  \item X.~Ji, \textit{Parton Physics from Large-Momentum Effective Field Theory}, Sci. China Phys. Mech. Astron. \textbf{57}, 1407 (2014).
+  \item X.~Ji et al., \textit{Large-Momentum Effective Theory}, Rev. Mod. Phys. \textbf{93}, 035005 (2021).
+  \item Y.-Q.~Ma and J.-W.~Qiu, \textit{Extracting Parton Distribution Functions from Lattice QCD Calculations}, Phys. Rev. D \textbf{98}, 074021 (2018).
+\end{enumerate}
+
+\subsection*{胶子 PDF 格点计算}
+\begin{enumerate}\setcounter{enumi}{6}
+  \item Z.~Fan, Y.~Yang et al., \textit{Gluon Quasi-PDF From Lattice QCD}, Phys. Rev. D \textbf{98}, 074505 (2018).
+  \item C.~Alexandrou et al., \textit{Gluon Parton Distribution of the Nucleon from $2+1+1$-Flavor Lattice QCD}, Phys. Rev. D \textbf{104}, 054503 (2021).
+  \item W.~Good, K.~Hasan et al., \textit{First Glimpse into the Kaon Gluon Parton Distribution Using Lattice QCD}, Phys. Rev. D \textbf{110}, 094508 (2024).
+\end{enumerate}
+
+\subsection*{Distillation 与动量涂抹}
+\begin{enumerate}\setcounter{enumi}{9}
+  \item M.~Peardon et al., \textit{Novel quark-field creation operator construction for hadronic physics in lattice QCD}, Phys. Rev. D \textbf{80}, 054506 (2009).
+  \item G.~Bali et al., \textit{Novel quark smearing for hadrons with high momenta in lattice QCD}, Phys. Rev. D \textbf{93}, 094515 (2016).
+  \item C.~Egerer et al., \textit{Distillation at High-Momentum}, Phys. Rev. D \textbf{106}, 094511 (2022).
+\end{enumerate}
+
+\subsection*{PDF 全局分析}
+\begin{enumerate}\setcounter{enumi}{12}
+  \item NNPDF Collaboration, \textit{Parton distributions from high-precision collider data}, Eur. Phys. J. C \textbf{77}, 663 (2017).
+  \item T.-J.~Hou et al., \textit{New CTEQ global analysis of quantum chromodynamics}, Phys. Rev. D \textbf{103}, 014013 (2021).
+  \item S.~Bailey et al., \textit{Parton distributions from LHC, HERA, Tevatron and fixed target data: MSHT20 PDFs}, Eur. Phys. J. C \textbf{81}, 341 (2021).
+\end{enumerate}
+
+\subsection*{格点 QCD 基础}
+\begin{enumerate}\setcounter{enumi}{15}
+  \item C.~Gattringer and C.B.~Lang, \textit{Quantum Chromodynamics on the Lattice}.
+  \item J.~Smit, \textit{Introduction to Quantum Field Theory}.
+  \item R.~Gupta, \textit{Introduction to Lattice QCD}, hep-lat/9807028.
+\end{enumerate}
+
+% ===========================================================================
+\appendix
+\section{符号约定}
+% ===========================================================================
+
+\begin{table}[htbp]
+\centering
+\caption{符号约定表}
+\begin{tabular}{c l}
+\toprule
+\textbf{符号} & \textbf{含义} \\
+\midrule
+$N_t, N_x, N_y, N_z$ & 格点在时间/空间方向的数目 \\
+$a$ & 格距 \\
+$U_\mu(x)$ & SU(3) 规范链接变量 \\
+$\Fmunu(x)$ & 胶子场强张量 \\
+$\Ftmunu(x)$ & 对偶场强张量 \\
+$P_{\mu\nu}(x)$ & Plaquette ($1\times 1$ Wilson loop) \\
+$\eps_{\mu\nu\rho\sigma}$ & 四维 Levi-Civita 张量 \\
+$W(z, 0)$ & Wilson 线 \\
+$v^{(k)}(x)$ & 第 $k$ 个 Laplace 本征矢量 \\
+$\tau^{(kl)}(t)$ & Perambulator \\
+$\Phi_{abc}$ & VVV (Baryon Block) \\
+$N_{\text{ev}}$ & 本征矢量数目 \\
+$P_z$ & $z$ 方向 boost 动量 \\
+$z$ & Wilson 线长度（格距单位） \\
+$x$ & Bjorken-$x$ \\
+$C_2$ & 两点关联函数 \\
+$C_3$ & 三点关联函数 \\
+$h(z, P_z)$ & 坐标空间矩阵元 \\
+$\tilde{g}(x, P_z)$ & quasi-PDF \\
+$g(x, \mu)$ & 光锥 PDF（\MSbar{}方案） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ===========================================================================
+\section{数据流图}
+% ===========================================================================
+
+\begin{center}
+\begin{tikzpicture}[
+  node distance=0.8cm,
+  box/.style={rectangle, draw, rounded corners, minimum width=2.8cm,
+              minimum height=0.7cm, align=center, font=\footnotesize},
+  arrow/.style={->, >=Stealth, thick}
+]
+  % 左列
+  \node[box] (gauge) {Gauge Configs\\$U_\mu(x)$};
+  \node[box, below=of gauge] (clover) {Clover Plaquette\\$\Fmunu(x)$};
+  \node[box, below=of clover] (ftilde) {$\Ftmunu(x)$\\$\eps$-contract};
+  \node[box, below=of ftilde] (ope) {OPE $O_{\mu\nu}(z)$\\+ Wilson Line};
+  \node[box, below=of ope] (opeval) {$\vev{O(z)}$};
+
+  % 右列
+  \node[box, right=2.5cm of gauge] (eig) {Laplace Eigenvectors\\$v^{(k)}(x)$};
+  \node[box, below=of eig] (phase) {Phase Factor\\$e^{-i\mathbf{P}\cdot\mathbf{x}}$};
+  \node[box, below=of phase] (vvv) {VVV $\Phi_{abc}(\mathbf{P})$\\$\eps_{ijk}$ contraction};
+  \node[box, below=of vvv] (peram) {Perambulator $\tau$};
+  \node[box, below=of peram] (wick) {Wick Contraction\\$C_2(\Delta t, \mathbf{P})$};
+
+  % 最终结果
+  \node[box, below=0.8cm of opeval, xshift=1.5cm] (hextract) {$h(z, P_z) = \vev{O(z)}$};
+  \node[box, below=of hextract] (fourier) {Fourier Transform\\$\tilde{g}(x, P_z)$};
+  \node[box, below=of fourier] (matching) {Matching Kernel\\$g(x, \mu)$};
+
+  % 箭头
+  \draw[arrow] (gauge) -- (clover);
+  \draw[arrow] (clover) -- (ftilde);
+  \draw[arrow] (ftilde) -- (ope);
+  \draw[arrow] (ope) -- (opeval);
+
+  \draw[arrow] (eig) -- (phase);
+  \draw[arrow] (phase) -- (vvv);
+  \draw[arrow] (vvv) -- (wick);
+  \draw[arrow] (peram) -- (wick);
+
+  \draw[arrow] (opeval) -- (hextract);
+  \draw[arrow] (wick) -- (hextract);
+  \draw[arrow] (hextract) -- (fourier);
+  \draw[arrow] (fourier) -- (matching);
+
+\end{tikzpicture}
+\end{center}
+
+\end{document}
