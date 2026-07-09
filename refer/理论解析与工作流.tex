@@ -273,41 +273,255 @@ O_{\mu\nu}^{\text{lat}}(z) = \tr_c\!\left[
 
 \subsection{三点关联函数与 disconnect 图}
 
-需要计算的三点关联函数为：
-\begin{equation}
-C_3(\Delta t; z, P_z) = \braket{\Omega |
-\mathcal{N}(\mathbf{P}, t_{\text{sink}}) \;
-O(z; t_{\text{op}}) \;
-\bar{\mathcal{N}}(\mathbf{P}, t_{\text{src}})
-| \Omega}
-\end{equation}
-其中 $\mathcal{N}$ 是质子插值算符，$O(z)$ 是胶子 quasi-PDF 算符。
+\subsubsection{三点关联函数的结构}
 
-对于胶子算符，只有 \textbf{disconnected 图}（quark-disconnected）有贡献：
-\begin{center}
-\begin{tikzpicture}[scale=1.2]
-  % 质子传播子 (两条水平线表示)
-  \draw[very thick] (0,1) -- (4,1) node[midway, above] {$N(t_{\text{sink}})$};
-  \draw[very thick] (0,0) -- (4,0) node[midway, below] {$\bar{N}(t_{\text{src}})$};
-  % 胶子算符 (垂直方向)
-  \draw[very thick, decorate, decoration={coil, aspect=0.5, amplitude=3pt}]
-    (2,1.5) -- (2,0.3);
-  \node at (2.5,1.2) {$O(z; t_{\text{op}})$};
-  % 断开标记
-  \draw[fill=white] (1.5,0.9) rectangle (2.5,1.1);
-  \draw[fill=white] (1.5,-0.1) rectangle (2.5,0.1);
-\end{tikzpicture}
-\end{center}
-
-\textbf{关键近似}：三点关联函数解耦为质子两点函数和 OPE 算符的乘积：
-\begin{equation}\label{eq:factorization}
-\boxed{C_3(\Delta t; z, P_z) \;\approx\; C_2(\Delta t; P_z) \cdot \vev{O(z)}_{\text{gauge}}}
+胶子 PDF 的格点计算需要构造包含胶子 quasi-PDF 算符 $O(z)$ 的核子三点关联函数：
+\begin{equation}\label{eq:C3_def}
+C_3(t_{\text{sep}}; z, \mathbf{P}) =
+\braket{\Omega \big|
+\;\mathcal{N}_\alpha(\mathbf{P}, t_{\text{sink}}) \;
+O_{\mu\nu}(z; t_{\text{op}}) \;
+\bar{\mathcal{N}}_\beta(\mathbf{P}, t_{\text{src}})
+\big| \Omega}
 \end{equation}
 其中：
 \begin{itemize}
-  \item $C_2(\Delta t; P_z) = \vev{\mathcal{N}(t_{\text{sink}}) \bar{\mathcal{N}}(t_{\text{src}})}$ 为质子两点关联函数；
-  \item $\vev{O(z)}_{\text{gauge}}$ 为纯规范场中 OPE 算符的真空期望值。
+  \item $t_{\text{sep}} = t_{\text{sink}} - t_{\text{src}}$ 是 source-sink 时间分离；
+  \item $t_{\text{op}}$ 是胶子算符插入时间（$t_{\text{src}} \le t_{\text{op}} \le t_{\text{sink}}$）；
+  \item $\mathcal{N}_\alpha(\mathbf{P}, t) = \sum_{\mathbf{x}} e^{-i\mathbf{P}\cdot\mathbf{x}} \, \mathcal{N}_\alpha(\mathbf{x}, t)$ 是动量投影的质子插值算符；
+  \item $O_{\mu\nu}(z; t_{\text{op}}) = \sum_{\mathbf{y}} O_{\mu\nu}(\mathbf{y}, z; t_{\text{op}})$ 是空间平均后的胶子 quasi-PDF 算符（零动量插入）；
+  \item $\alpha,\beta$ 是 Dirac 旋量指标。
 \end{itemize}
+
+胶子 quasi-PDF 算符 $O_{\mu\nu}(z)$ 本身是一个\textbf{纯规范场算符}——它仅包含规范链接 $U_\mu$ 和由其构造的场强张量 $\Fmunu$，不包含任何夸克场算符。这意味着：
+\begin{equation}
+[O_{\mu\nu}(z), \psi(x)] = [O_{\mu\nu}(z), \bar{\psi}(x)] = 0
+\end{equation}
+胶子算符与夸克场完全对易。
+
+\subsubsection{Wick 收缩的分类：Connected 与 Disconnected}
+
+对~\eqref{eq:C3_def} 中的夸克场做 Wick 收缩，得到两类拓扑不同的费曼图。
+
+\textbf{类型 A：Connected 图（夸克-connected）}
+
+当胶子算符中的规范场通过夸克-胶子顶点与核子中的夸克线相连时，形成 connected 贡献：
+\begin{equation}\label{eq:connected}
+C_3^{\text{conn}} = \big\langle\;
+\tr\big[ S_u(x_1, y_1) \, \Gamma \, S_d(y_1, x_2) \, \cdots \,
+\Gamma_{\text{gluon}} \, S_q(x_i, y_j) \,\big]
+\;\big\rangle_{\text{gauge}}
+\end{equation}
+在此类图中，胶子场强张量 $F_{\mu\nu}$ 中的一个或多个规范链接与夸克传播子 $S_q$ 通过 QCD 相互作用顶点耦合。这种图同时包含夸克线和规范场的量子涨落。
+
+在微扰 QCD 中，leading connected 图是胶子与单条夸克线通过一个三胶子顶点（或夸克-胶子顶点）耦合。在格点上，这对应在夸克传播子的计算中插入场强算符，需要对每个规范组态计算修改后的夸克传播子（包含 $F_{\mu\nu}$ 插入的 sequential source 方法）。
+
+\textbf{类型 B：Disconnected 图（夸克-disconnected）}
+
+当胶子算符中的规范场\textbf{不与}核子中的任何夸克线耦合时，形成 disconnected 贡献：
+\begin{equation}\label{eq:disconnected}
+C_3^{\text{disc}} = \big\langle\;
+\tr\big[ S_u \Gamma S_d \Gamma S_u \big]_{\text{quark}}
+\;\times\;
+\tr_c\big[ F_{z\mu}(z) \, W(z,0) \, \tilde{F}^{\mu z}(0) \big]_{\text{gluon}}
+\;\big\rangle_{\text{gauge}}
+\end{equation}
+在此类图中，夸克部分和胶子部分在 Wick 收缩中\textbf{完全分离}：
+\begin{itemize}
+  \item \textbf{夸克部分}：构成标准的核子两点关联函数的夸克收缩（三个夸克传播子的色收缩加上重子插值算符）；
+  \item \textbf{胶子部分}：纯规范场的 OPE 算符 $O_{\mu\nu}(z)$ 的迹。
+\end{itemize}
+夸克部分和胶子部分仅通过规范组态的整体平均 $\langle\cdots\rangle_{\text{gauge}}$ 关联——即同一个规范组态同时用于计算夸克传播子和胶子算符。
+
+\textbf{拓扑区分的关键判据}：
+\begin{center}
+\fbox{%
+\begin{minipage}{0.92\textwidth}
+\small
+\textbf{Connected} $\Longleftrightarrow$ 胶子算符与至少一条夸克线共享规范链接的量子涨落。
+
+\textbf{Disconnected} $\Longleftrightarrow$ 胶子算符的规范链接与所有夸克线之间没有直接的 Wick 收缩。夸克线和胶子线在拓扑上是分离的。
+\end{minipage}%
+}
+\end{center}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[scale=1.1, >=Stealth,
+  quark/.style={very thick, blue!70!black},
+  gluon/.style={very thick, red!60!black},
+  vertex/.style={fill=black, circle, inner sep=1.2pt},
+  label/.style={font=\footnotesize}
+]
+  % ======= 左图: CONNECTED =======
+  \node[label, above] at (0,3.4) {\textbf{(a) Connected (夸克-connected)}};
+
+  % 夸克线: source -> 各种传播 -> sink
+  \draw[quark] (0,0) -- (0.8,1.2);
+  \draw[quark] (0.8,1.2) -- (2.0,1.8);
+  \draw[quark] (2.0,1.8) -- (3.2,1.2);
+  \draw[quark] (3.2,1.2) -- (4.0,0);
+  \draw[quark] (0,3) -- (0.8,1.8);
+  \draw[quark] (0.8,1.8) -- (2.0,1.2);
+  \draw[quark] (2.0,1.2) -- (3.2,1.8);
+  \draw[quark] (3.2,1.8) -- (4.0,3);
+  \draw[quark] (0,1.5) -- (4.0,1.5);
+
+  % 胶子算符从某条夸克线上发出
+  \draw[gluon] (2.0,1.5) -- (2.0,3.0);
+  \node[label, red!60!black] at (2.4,2.6) {$O(z)$};
+
+  % 顶点
+  \filldraw[vertex] (0.8,1.8) circle (1.5pt);
+  \filldraw[vertex] (2.0,1.8) circle (1.5pt);
+  \filldraw[vertex] (2.0,1.2) circle (1.5pt);
+  \filldraw[vertex] (2.0,1.5) circle (2.0pt);
+  \filldraw[red!60!black] (2.0,1.5) circle (2.5pt);
+
+  % 标签
+  \node[label] at (4.3,0)   {$N(t_{\text{sink}})$};
+  \node[label] at (4.3,3)   {$\bar{N}(t_{\text{src}})$};
+  \node[label] at (-0.5,1.5) {\small 夸克线};
+  \node[label] at (-0.5,0)   {\small (色收缩)};
+
+  % ======= 右图: DISCONNECTED =======
+  \begin{scope}[xshift=6.5cm]
+    \node[label, above] at (0,3.4) {\textbf{(b) Disconnected (夸克-disconnected)}};
+
+    % 上半部分: 核子传播子 (仅夸克线)
+    \draw[quark] (0,2.0) -- (0.8,2.8);
+    \draw[quark] (0.8,2.8) -- (1.6,2.4);
+    \draw[quark] (1.6,2.4) -- (2.4,2.8);
+    \draw[quark] (2.4,2.8) -- (3.2,2.0);
+    \draw[quark] (0,3.0) -- (0.8,2.2);
+    \draw[quark] (0.8,2.2) -- (1.6,2.6);
+    \draw[quark] (1.6,2.6) -- (2.4,2.2);
+    \draw[quark] (2.4,2.2) -- (3.2,3.0);
+    \draw[quark] (0,2.5) -- (3.2,2.5);
+
+    \node[label] at (3.6,2.0) {$N$};
+    \node[label] at (3.6,3.0) {$\bar{N}$};
+    \node[label, blue!70!black] at (1.6,1.7) {\small 核子 2pt: $C_2(\Delta t, \mathbf{P})$};
+
+    % 分隔虚线
+    \draw[dashed, gray] (-0.8, 1.2) -- (4.2, 1.2);
+    \node[label, gray] at (4.8, 1.2) {\small (仅通过 $\langle\cdot\rangle_{\text{gauge}}$ 关联)};
+
+    % 下半部分: 纯规范场 OPE 算符
+    \draw[gluon] (0.4,0.8) -- (0.4,0);
+    \draw[gluon] (1.2,0.8) -- (1.2,0);
+    \draw[gluon] (2.0,0.8) -- (2.0,0);
+    \draw[gluon] (2.8,0.8) -- (2.8,0);
+    % 水平连接
+    \draw[gluon, loosely dotted] (0.4,0.8) -- (2.8,0.8) node[midway, above, yshift=2pt] {$W(z,0)$: Wilson线};
+    % F 和 F_tilde 标记
+    \node[label, red!60!black, fill=white] at (0.3,0.6) {$F_{z\mu}(z)$};
+    \node[label, red!60!black, fill=white] at (2.9,0.6) {$\tilde{F}^{\mu z}(0)$};
+    \node[label, red!60!black] at (1.6,-0.5) {\small 纯规范场 OPE: $\langle O(z) \rangle_{\text{gauge}}$};
+
+  \end{scope}
+
+\end{tikzpicture}
+\caption{三点关联函数的两种 Wick 收缩拓扑。\textbf{(a)} Connected 图：胶子算符通过夸克-胶子顶点与核子中的夸克线耦合。\textbf{(b)} Disconnected 图：夸克部分（核子传播子）与胶子部分（OPE 算符）在拓扑上完全分离，仅通过同一规范组态上的平均关联。对胶子 quasi-PDF 算符，只有 disconnected 图有贡献。}
+\label{fig:connected_vs_disconnected}
+\end{figure}
+
+\subsubsection{为什么胶子算符只有 Disconnected 图？}
+
+从量子场论的角度，胶子 quasi-PDF 算符 $O_{\mu\nu}(z)$ 的定义决定了其与夸克场的相互作用结构：
+
+\begin{enumerate}
+  \item \textbf{算符的组成}：$O_{\mu\nu}(z) = \tr_c[F_{z\mu}(z) \, W(z,0) \, \tilde{F}_{\nu}^{\;z}(0)]$ 仅包含规范场 $A_\mu^a$ 及其导数，不包含任何夸克场 $\psi, \bar{\psi}$。
+
+  \item \textbf{Wick 收缩规则}：三点关联函数的路径积分表示为
+  \begin{equation}
+  C_3 = \frac{1}{Z} \int \mathcal{D}U \mathcal{D}\psi \mathcal{D}\bar{\psi} \;
+  e^{-S_G[U] - \bar{\psi} D[U] \psi} \;
+  (\mathcal{N} \bar{\mathcal{N}})_{\text{quark}} \;
+  O_{\mu\nu}(z)[U]
+  \end{equation}
+  对夸克场积分后：
+  \begin{equation}
+  C_3 = \frac{1}{Z} \int \mathcal{D}U \; e^{-S_G[U]} \; \det(D[U]) \;
+  \underbrace{\big[ \text{Wick contractions of } \mathcal{N}\bar{\mathcal{N}} \big]}_{\text{夸克部分} \;\equiv\; C_2[U]} \;
+  \underbrace{\vphantom{\big[} O_{\mu\nu}(z)[U]}_{\text{胶子部分}}
+  \end{equation}
+  由于 $O_{\mu\nu}(z)$ 与 $\psi,\bar{\psi}$ 对易，在 Grassmann 积分中 $O_{\mu\nu}(z)$ 作为纯 $U$ 的函数被提出积分号外。
+
+  \item \textbf{Connected 图消失的条件}：如果胶子算符通过夸克-胶子顶点 $g_0 \bar{\psi} \gamma^\mu A_\mu \psi$ 与夸克线耦合，则需要场强 $F_{\mu\nu}$ 中的规范链接与夸克传播子中的规范链接共享量子涨落。但 $O_{\mu\nu}(z)$ 是一个\textbf{规范不变的整体算符}——它的场强 $F_{\mu\nu}$ 通过 clover plaquette 定义，Wilson 线确保了规范不变性，这意味着胶子算符在格点上的 Wick 收缩中不能以 leading order 与夸克线连接（需要至少一个胶子从夸克线辐射出去，这是 $\order{g_0}$ 的修正）。
+\end{enumerate}
+
+\textbf{结论}：在 leading order（格点 QCD 的全非微扰计算中），胶子 quasi-PDF 的三点关联函数仅包含 disconnected 贡献。这一点已在多个格点胶子 PDF 计算中被证实（Fan et al. 2018; Alexandrou et al. 2021）。
+
+\subsubsection{因子化：三点函数到两点函数+OPE的解耦}
+
+基于上述讨论，三点关联函数可以严格写为：
+\begin{equation}\label{eq:factorization_exact}
+C_3(t_{\text{sep}}; z, \mathbf{P}) =
+\frac{1}{N_{\text{conf}}} \sum_{\text{conf}}
+\underbrace{\vphantom{\big[} C_2(t_{\text{sep}}; \mathbf{P})\big|_{U}}_{\text{核子 2pt（依赖 }U\text{）}} \;
+\cdot \;
+\underbrace{\vphantom{\big[} O(z)\big|_{U}}_{\text{OPE（依赖 }U\text{）}}
+\end{equation}
+即在每个规范组态 $U$ 上，核子两点函数 $C_2[U]$ 和胶子 OPE 算符 $O(z)[U]$ 分别计算，然后在组态系综上求平均。
+
+在实际计算中，由于 $C_2[U]$ 对规范组态的依赖相对平滑（夸克传播子的统计涨落已经通过 distillation 被大幅压制），而 $O(z)[U]$ 的涨落是主要的统计噪声来源。因此可以采用\textbf{部分因子化}策略：
+\begin{equation}\label{eq:factorization}
+\boxed{C_3(t_{\text{sep}}; z, \mathbf{P}) \;\approx\;
+\underbrace{\big\langle C_2(t_{\text{sep}}; \mathbf{P}) \big\rangle_{\text{conf}}}_{\text{对组态平均后的 2pt}} \;\cdot\;
+\underbrace{\big\langle O(z) \big\rangle_{\text{conf}}}_{\text{对组态平均后的 OPE}}}
+\end{equation}
+这就是本工作中使用的核心近似——三点关联函数被因子化为\textbf{组态平均后的核子两点函数}与\textbf{组态平均后的 OPE 算符期望值}的乘积。
+
+\textbf{因子化成立的数值条件}：
+\begin{itemize}
+  \item $C_2[U]$ 和 $O(z)[U]$ 在组态系综上的协方差足够小：
+  $\operatorname{Cov}(C_2, O) \ll \langle C_2 \rangle \cdot \langle O \rangle$；
+  \item 核子两点函数的时间分离 $t_{\text{sep}}$ 足够大，使得基态饱和（激发态污染 $< 1\%$）；
+  \item Distillation 截断 $N_{\text{ev}}$ 足够大，核子插值算符与基态的重叠因子接近 1。
+\end{itemize}
+
+\textbf{因子化的物理图像}：
+\begin{center}
+\begin{tikzpicture}[scale=1.2, >=Stealth,
+  box/.style={rectangle, draw, rounded corners, minimum width=2.5cm,
+              minimum height=0.8cm, align=center, font=\small},
+  arrow/.style={->, >=Stealth, thick, gray}
+]
+  \node[box, fill=blue!8] (c3) at (0,0) {$C_3(t_{\text{sep}}; z, \mathbf{P})$\\三点关联函数};
+  \node[box, fill=blue!8] (c2) at (-3,-2) {$C_2(t_{\text{sep}}; \mathbf{P})$\\核子两点函数\\(Distillation)};
+  \node[box, fill=red!8] (ope) at (3,-2) {$\langle O(z) \rangle$\\胶子 OPE 算符\\(纯规范场)};
+
+  \draw[arrow] (c3) -- (c2) node[midway, above, sloped, font=\footnotesize] {夸克部分};
+  \draw[arrow] (c3) -- (ope) node[midway, above, sloped, font=\footnotesize] {胶子部分};
+
+  \node[font=\small, below=0.3cm of c2] {\textit{momentum-smeared}};
+  \node[font=\small, below=0.3cm of ope] {\textit{clover plaquette + Wilson线}};
+\end{tikzpicture}
+\end{center}
+
+\subsubsection{时间结构与边界条件}
+
+三点关联函数中算符的时序关系为 $t_{\text{src}} \le t_{\text{op}} \le t_{\text{sink}}$。对于具有（反）周期性边界条件的格点，时间指标在模 $N_t$ 意义下定义：
+\begin{equation}
+\Delta t \equiv (t_{\text{sink}} - t_{\text{src}}) \bmod N_t, \qquad
+\Delta t_{\text{op}} \equiv (t_{\text{op}} - t_{\text{src}}) \bmod N_t
+\end{equation}
+
+在格点上，关联函数按时间分离 $\Delta t$ 的参数化为：
+\begin{equation}\label{eq:C2_param}
+C_2(\Delta t, \mathbf{P}) = \sum_n |Z_n(\mathbf{P})|^2 \,
+e^{-E_n(\mathbf{P}) \Delta t} + \text{（反向传播项）}
+\end{equation}
+其中 $E_n(\mathbf{P}) = \sqrt{m_n^2 + \mathbf{P}^2}$，$Z_n$ 为重叠因子。
+
+对于 OPE 算符的期望值，由于取空间平均后在所有时间片上独立：
+\begin{equation}
+\langle O(z) \rangle_{\text{gauge}} = \frac{1}{N_t}
+\sum_{t_{\text{op}}=0}^{N_t-1} \sum_{\mathbf{x}} O(\mathbf{x}, z; t_{\text{op}})
+\end{equation}
+
+\textbf{注}：在实际计算中，为了最大化统计量，OPE 算符对\textbf{所有}时间片 $t_{\text{op}}$ 求平均（而非仅在 $t_{\text{src}}$ 和 $t_{\text{sink}}$ 之间的时间片）。这是因为胶子算符不含夸克场，即使在 $t_{\text{op}}$ 在 $t_{\text{src}} \text{--} t_{\text{sink}}$ 范围之外，quark-disconnected 拓扑也不受影响。这一性质显著提升了信噪比。
 
 \subsection{Eq.~(20)：矩阵元}
 
