@@ -42,3 +42,6 @@ lib/*
 *.tsv
 *.prof
 *.pyc
+*.aux
+*.toc
+./refer/.*.log
