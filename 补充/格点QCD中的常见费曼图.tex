@@ -1,0 +1,653 @@
+\documentclass[12pt,a4paper]{ctexart}
+\usepackage[top=2.2cm,bottom=2.2cm,left=2.2cm,right=2.2cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm,physics}
+\usepackage{graphicx,float,booktabs,array,caption,multirow}
+\usepackage{hyperref,xcolor,enumitem,mathtools}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{tikz}
+\usetikzlibrary{calc,decorations.pathmorphing,decorations.markings,shapes,arrows.meta,positioning,patterns}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+
+% Common styles for Feynman diagrams
+\tikzset{
+  quark/.style={postaction={decorate}, decoration={markings, mark=at position 0.55 with {\arrow{>}}}, line width=0.7pt},
+  gluon/.style={decorate, decoration={coil, aspect=0.6, segment length=3pt, amplitude=2pt}, line width=0.5pt},
+  antiquark/.style={postaction={decorate}, decoration={markings, mark=at position 0.45 with {\arrow{<}}}, line width=0.7pt},
+  wilson/.style={double, double distance=1.5pt, line width=0.6pt},
+  wilsongluon/.style={double, double distance=1.5pt, line width=0.6pt, decorate, decoration={coil, aspect=0.6, segment length=3pt, amplitude=2pt}},
+  propagat/.style={line width=0.7pt},
+  vertex/.style={circle, fill=black, inner sep=0pt, minimum size=3pt},
+  bigvertex/.style={circle, fill=black, inner sep=0pt, minimum size=4pt},
+  blob/.style={circle, draw=black, fill=gray!20, inner sep=0pt, minimum size=12pt},
+  blobbig/.style={circle, draw=black, fill=gray!20, inner sep=0pt, minimum size=20pt},
+  arrowline/.style={->, >=Stealth, thick},
+}
+
+\title{\heiti 格点QCD中的常见费曼图：\\
+从夸克传播子到TMD算符的图解目录}
+\author{基于本库全部相关文献与教材的综合整理}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+格点QCD中的``费曼图''具有超越微扰展开的独特含义——在非微扰格点框架中，它们是\textbf{Wick缩并后夸克传播子和规范链接的结构化拓扑表示}，直接决定了关联函数的计算复杂度、信噪比和物理诠释。与连续微扰论中代表散射振幅的费曼图不同，格点QCD中的图表示的是\emph{算符插入点之间夸克线的连通拓扑}——连通vs非连通、价夸克vs海夸克、直Wilson线vs staple型Wilson线——这些拓扑区分定义了现代格点部分子物理中所有关键计算的方法论选择。
+
+本文基于本库中的核心教材（Gattringer与Lang的\textit{Quantum Chromodynamics on the Lattice}——第3、5、6、8章；Gupta的\textit{Introduction to Lattice QCD}——第14、17章；Peskin与Schroeder的\textit{An Introduction to Quantum Field Theory}——第17章）以及约20篇研究论文，以\textbf{12幅TikZ绘制的图解}系统展示格点QCD中从关联函数的基本``连通/非连通''拓扑到TMD-PDF的staple型Wilson线结构的完整图解目录。
+
+每幅图附有LaTeX算符定义、物理诠释、信噪比特征及本库中的参考来源，可作为阅读和撰写格点QCD论文时的可视化速查手册。
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%==========================================================================
+\section{关联函数中的费曼图——基本拓扑}
+%==========================================================================
+
+\subsection{连通图：介子关联函数（同位旋矢量）}
+
+同位旋矢量介子（如$\pi^+ = \bar d \gamma_5 u$）的关联函数\textbf{纯由连通图贡献}——这是格点QCD中计算最简单、精度最高的拓扑：
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  % Time axis
+  \draw[->] (-0.5,-0.8) -- (-0.5,2.8) node[above] {$n_t$};
+  \node[rotate=90] at (-1.0,1.0) {Euclidean时间};
+
+  % Source point at t=0
+  \filldraw (0,0) circle (2pt) node[below] {$0$};
+  % Sink point at t
+  \filldraw (0,2.5) circle (2pt) node[above] {$n$};
+
+  % Two quark propagators: u from 0 to n, d from n back to 0
+  \draw[quark] (0,0) .. controls (1.2,1.0) and (1.2,1.5) .. (0,2.5)
+    node[midway, right, font=\footnotesize] {$u$};
+  \draw[quark] (0,0) .. controls (-1.2,1.0) and (-1.2,1.5) .. (0,2.5)
+    node[midway, left, font=\footnotesize] {$\bar d$};
+
+  % Interpolator labels
+  \node[right] at (0.3,0.3) {\footnotesize $\pi^+(0)=\bar d\gamma_5 u$};
+  \node[right] at (0.3,2.3) {\footnotesize $\bar\pi^+(n)=\bar u\gamma_5 d$};
+
+  % Gauge background note
+  \node[text=gray, font=\footnotesize] at (3.0,1.2) {$\langle\cdots\rangle_G$};
+  \node[text=gray, font=\tiny] at (3.0,0.8) {胶子组态};
+  \node[text=gray, font=\tiny] at (3.0,0.5) {平均};
+
+  % Diagram label
+  \node[font=\footnotesize\bfseries] at (0,-1.2) {(a) 连通图——介子两点函数};
+\end{tikzpicture}
+\caption{连通图：$\pi^+$介子关联函数。$u$夸克从0到$n$（正向），$\bar d$夸克从$n$返回0（反向）——两条夸克线形成一个连通回路。$\langle\cdots\rangle_G$表示对胶子组态的平均。\textbf{缩并结果：}$-\operatorname{tr}[\gamma_5 D_u^{-1}(n|0)\gamma_5 D_d^{-1}(0|n)]$。\textbf{信噪比：}$\sim e^{-m_\pi t}$（最优）。}
+\label{fig:connected_meson}
+\end{figure}
+
+\textbf{算符定义：}$\langle \pi^+(n) \pi^+(0)^\dagger \rangle_F = -\operatorname{tr}[\gamma_5 D_u^{-1}(n|0) \gamma_5 D_d^{-1}(0|n)]$。
+同位旋对称性（$m_u=m_d$）下，\textbf{无非连通贡献}。这是LPC合作组所有同位旋矢量PDF/TMD-PDF计算——精度最高的扇区——的拓扑基础。
+
+\subsection{连通图：重子关联函数}
+
+重子（如质子$uud$）的关联函数需要\textbf{三条夸克线}，仍为纯连通拓扑：
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  \filldraw (0,0) circle (2pt) node[below] {$0$};
+  \filldraw (0,2.5) circle (2pt) node[above] {$n$};
+
+  % Three quark propagators (all on different paths)
+  \draw[quark] (0,0) .. controls (1.5,1.0) and (1.0,1.8) .. (0,2.5)
+    node[midway, right, font=\footnotesize] {$u$};
+  \draw[quark] (0,0) .. controls (0.3,1.0) and (0.3,1.8) .. (0,2.5)
+    node[midway, right, font=\footnotesize, xshift=10pt] {$d$};
+  \draw[quark] (0,0) .. controls (-0.8,1.0) and (-0.8,1.8) .. (0,2.5)
+    node[midway, left, font=\footnotesize] {$u$};
+
+  \node[right] at (0.5,0.3) {\footnotesize $N(0) = \epsilon^{abc} u^a (u^{bT}C\gamma_5 d^c)$};
+  \node[font=\footnotesize\bfseries] at (0,-1.0) {(b) 连通图——重子三点函数};
+\end{tikzpicture}
+\caption{连通图：核子$N = \epsilon^{abc} u^a (u^{bT} C\gamma_5 d^c)$的关联函数。三条夸克线（$u,u,d$）均由$\epsilon^{abc}$反对称化为色单态。三条线形成统一的连通回路——无非连通子图。\textbf{信噪比：}$\sim e^{-m_N t}$（指数衰减快于介子）。}
+\label{fig:connected_baryon}
+\end{figure}
+
+\subsection{非连通图：同位旋单态介子与海夸克环}
+
+当介子内插算符为同位旋单态（如$O_S = (\bar u\Gamma u + \bar d\Gamma d)/\sqrt{2}$）时，Wick缩并产生\textbf{连通部分}$+$\textbf{非连通部分}——后者由两个\textbf{独立的闭合夸克环}构成：
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  \filldraw (-2,0) circle (2pt) node[below] {$0$};
+  \filldraw (2,0) circle (2pt) node[below] {$n$};
+
+  % Connected contribution (left)
+  \draw[quark] (-2,0) .. controls (-1,1.0) and (1,1.0) .. (2,0)
+    node[midway, above, font=\footnotesize] {$\bar u + \bar d$};
+  \draw[quark] (-2,0) .. controls (-1,0.4) and (1,0.4) .. (2,0)
+    node[midway, below, font=\footnotesize] {$u + d$};
+
+  % Disconnected: two independent closed loops
+  \draw[quark] (-2,0) circle (12pt);
+  \draw[quark] (2,0) circle (12pt);
+
+  % Labels
+  \node at (-2,-0.6) {\footnotesize 连通部分};
+  \node at (2,-0.6) {\footnotesize 非连通部分};
+  \node[text=red, font=\footnotesize] at (2,0.5) {$\operatorname{tr}[\Gamma D^{-1}(n|n)]$};
+  \node[font=\footnotesize\bfseries] at (0,-1.3) {(c) 连通 + 非连通——味单态介子};
+\end{tikzpicture}
+\caption{非连通图：同位旋单态介子关联函数包含连通部分（左）和\textbf{两个独立的闭合夸克环}（右）。每个环$\operatorname{tr}[\Gamma D^{-1}(n|n)]$代表真空中的虚夸克-反夸克对涨落——即\textbf{海夸克}（sea quarks）的拓扑体现。\textbf{信噪比：}非连通部分在$V\to\infty$极限下按$1/\sqrt{V}$发散——是格点QCD中\textbf{最难精确计算}的结构。}
+\label{fig:disconnected}
+\end{figure}
+
+\textbf{算符定义（Gattringer \& Lang Eq.\,(6.13)~\cite{GattringerLang2010}）：}
+\begin{equation*}
+\langle O_S(n) O_S(0) \rangle_F = -\tfrac{1}{2}\operatorname{tr}[\Gamma D_u^{-1}(n|0)\Gamma D_u^{-1}(0|n)]
+-\tfrac{1}{2}\operatorname{tr}[\Gamma D_u^{-1}(n|n)]\operatorname{tr}[\Gamma D_u^{-1}(0|0)] + \cdots
+\end{equation*}
+
+%==========================================================================
+\section{夸克传播子的费米子线展开}
+%==========================================================================
+
+\subsection{Hopping展开：传播子作为路径求和}
+
+Gattringer \& Lang §5.3给出的hopping展开将夸克传播子表达为\textbf{规范链接的非回溯路径}的加权求和~\cite{GattringerLang2010}：
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  % Lattice grid (simplified)
+  \draw[gray!40, thin] (0,0) grid (5,2);
+
+  % Source point
+  \filldraw[red] (0,1) circle (2.5pt) node[left, font=\footnotesize] {$m$};
+  % Sink point
+  \filldraw[blue] (5,1) circle (2.5pt) node[right, font=\footnotesize] {$n$};
+
+  % Shortest path (straight) - 5 steps
+  \draw[very thick, blue!60, ->, >=Stealth] (0.5,1) -- (1.5,1);
+  \draw[very thick, blue!60] (1.5,1) -- (2.5,1);
+  \draw[very thick, blue!60] (2.5,1) -- (3.5,1);
+  \draw[very thick, blue!60, ->, >=Stealth] (3.5,1) -- (4.5,1);
+  \node[font=\tiny, blue!60] at (2.5,1.3) {$\kappa^5$ (最短路径)};
+
+  % Detour path - more steps
+  \draw[orange!60, ->, >=Stealth] (0.5,1) -- (0.5,1.8) -- (1.5,1.8) -- (1.5,1);
+  \draw[orange!60] (1.5,1) -- (2.5,1);
+  \draw[orange!60, ->, >=Stealth] (2.5,1) -- (2.5,0.2) -- (3.5,0.2) -- (3.5,1);
+  \draw[orange!60] (3.5,1) -- (4.5,1);
+  \node[font=\tiny, orange!60] at (2.5,1.8) {$\kappa^{8}$ (绕道路径)};
+
+  \node[font=\footnotesize\bfseries] at (2.5,-0.5) {(d) Hopping展开——传播子 $D^{-1}(n|m) = \sum_{j} \kappa^j H^j$};
+\end{tikzpicture}
+\caption{Hopping展开：夸克传播子$D^{-1}(n|m) = \sum_{j=0}^\infty \kappa^j H^j(n|m)$解释为从$m$到$n$的所有\textbf{非回溯路径的加权求和}。每条路径对应连接两点的规范链接序列。权重$\kappa^j$随路径长度$j$指数衰减——对重夸克（小$\kappa$），最短路径主导；对流夸克（$\kappa\approx\kappa_c$），长路径贡献不可忽略。\textbf{关键性质：}$(1-\gamma_\mu)(1+\gamma_\mu)=0$禁止180°转折的路径。\textbf{来源：}Gattringer \& Lang, Fig.\,5.1~\cite{GattringerLang2010}。}
+\label{fig:hopping}
+\end{figure}
+
+\subsection{闭合费米子环与行列式}
+
+费米子行列式$\det[D]$的hopping展开对应于\textbf{所有可能的闭合非回溯环}的指数求和~\cite{GattringerLang2010}：
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  % Closed fermion loops
+  \draw[quark] (0,0) .. controls (1,0.5) and (1.5,1.5) .. (1,2)
+    .. controls (0,1.5) and (-0.5,1) .. (0,0);
+  \node at (0,-0.5) {\footnotesize 长度$j=4$};
+
+  \draw[quark] (3.5,0) .. controls (5,0.8) and (5.5,2) .. (4,2.2)
+    .. controls (2.5,1.5) and (2.5,0.3) .. (3.5,0);
+  \node at (3.8,-0.5) {\footnotesize 长度$j=8$};
+
+  \draw[quark] (7,0.5) ellipse (1.2 and 0.4);
+  \node at (7,-0.5) {\footnotesize 任意$j$};
+
+  % Summation sign
+  \node[font=\Large] at (8.8,1.2) {$\displaystyle\sum_{j=1}^\infty$};
+  \node at (10.5,1.2) {\footnotesize $\to \det[D] =$};
+  \node at (10.5,0.7) {\footnotesize $\exp\left[-\sum_j \frac{1}{j}\operatorname{tr}[\kappa^j H^j]\right]$};
+
+  \node[font=\footnotesize\bfseries] at (4,-1.3) {(e) 费米子行列式——闭合夸克环的指数求和};
+\end{tikzpicture}
+\caption{费米子行列式：$\det[D]$的hopping展开对应于所有可能的\textbf{闭合非回溯夸克环}的加权求和。$\operatorname{tr}[H^j(n|n)]$为从$n$出发回到$n$的长度为$j$的所有闭合路径之和。在HMC算法中，这些环通过赝费米子$\det[D D^\dagger] = \int \mathcal{D}\phi e^{-\phi^\dagger (D^\dagger D)^{-1}\phi}$被纳入规范组态的生成。\textbf{淬火近似}将$\det[D]$设为1——即忽略所有此类闭合环。\textbf{来源：}Gattringer \& Lang, §5.3.2~\cite{GattringerLang2010}。}
+\label{fig:fermion_loops}
+\end{figure}
+
+%==========================================================================
+\section{Wilson线与准PDF/TMD算符}
+%==========================================================================
+
+\subsection{直Wilson线与准PDF算符}
+
+LaMET/准PDF计算的核心是\textbf{由直空间Wilson线连接的非定域夸克双线型}~\cite{Ji2013Euclidean}：
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  % Space axis (z-direction)
+  \draw[->] (-0.5,0) -- (5,0) node[right] {$z$};
+
+  % Quark fields at positions
+  \filldraw (0,0) circle (2pt) node[below=4pt] {$\psi(0)$};
+  \filldraw (4,0) circle (2pt) node[below=4pt] {$\bar\psi(z\hat n_z)\gamma^t$};
+
+  % Straight Wilson line connecting them
+  \draw[wilson, red!50!black, line width=1.2pt] (0,0) -- (4,0)
+    node[midway, above] {\footnotesize $U(z,0) = \mathcal{P}\exp[-ig\int_0^z dz' A_z(z')]$};
+
+  % Labels
+  \node[font=\footnotesize] at (2,0.8) {\textbf{准PDF算符：}};
+  \node[font=\footnotesize] at (2,0.4) {$\mathcal{O}_\Gamma(z) = \bar\psi(z\hat n_z)\,\Gamma\,U(z,0)\,\psi(0)$};
+  \node[font=\tiny, text=red!50!black] at (2,-0.6) {$\Gamma = \gamma^t$ (非极化), $\gamma^z\gamma_5$ (螺旋度), $i\sigma^{zt}\gamma_5$ (横向性)};
+
+  \node[font=\footnotesize\bfseries] at (2,-1.2) {(f) 直Wilson线——准PDF算符};
+\end{tikzpicture}
+\caption{直Wilson线：连接$\psi(0)$和$\bar\psi(z\hat n_z)\Gamma$的空间方向规范链接$U(z,0)$确保算符的规范不变性。\textbf{线性发散：}Wilson线自能产生$e^{-\delta m |z|/a}$的指数衰减——必须通过非微扰重整化消除。\textbf{准PDF：}$\tilde q(x,P_z) = \int \frac{dz}{4\pi} e^{ixP_z z} \langle P|\mathcal{O}_{\gamma^t}(z)|P\rangle$。\textbf{来源：}Ji, PRL 110, 262002 (2013)~\cite{Ji2013Euclidean}；Gattringer \& Lang, Ch.~11。}
+\label{fig:straight_wilson}
+\end{figure}
+
+\subsection{Staple型Wilson线与准TMD-PDF算符}
+
+TMD-PDF需要同时捕获\textbf{纵向}和\textbf{横向}的夸克动量分布，因此算符中的Wilson线必须是\textbf{订书钉形（staple）}的~\cite{Zhang2022renormTMD}：
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  % Coordinates
+  \draw[->] (-0.5,0) -- (6,0) node[right] {$z$（纵向）};
+  \draw[->] (0,-0.5) -- (0,2) node[above] {$b_\perp$（横向）};
+
+  % Quark fields
+  \filldraw (0,0) circle (2pt) node[below left] {$\psi(0)$};
+  \filldraw (4,1.5) circle (2pt) node[above right] {$\bar\psi(\vec b_\perp + z\hat n_z)\Gamma$};
+
+  % Staple Wilson line: three segments
+  \draw[wilson, red!50!black, line width=1.2pt] (0,0) -- (4,0)
+    node[midway, below, font=\tiny] {$U_z((z+L)\hat n_z, 0)$（底边）};
+  \draw[wilson, blue!50!black, line width=1.2pt] (4,0) -- (4,1.5)
+    node[midway, right, font=\tiny] {$U_\perp$（横向）};
+  \draw[wilson, red!50!black, line width=1.2pt] (4,1.5) -- (0,1.5)
+    node[midway, above, font=\tiny] {$U_z^\dagger$（上边，反向）};
+
+  % Mark L extension
+  \draw[<->, dashed, gray] (4,0.5) -- (5.5,0.5) node[right, font=\tiny] {$L\to\infty$};
+  \draw[gray, dashed, thin] (4,0) -- (5.5,0);
+  \draw[gray, dashed, thin] (4,1.5) -- (5.5,1.5);
+
+  % Rectangle Wilson loop (the subtraction)
+  \draw[green!50!black, line width=0.8pt, densely dashed] (5.5,0) rectangle (5.8,1.5);
+  \node[font=\tiny, green!50!black] at (5.65,0.75) {$Z_E$};
+
+  \node[font=\footnotesize\bfseries] at (2.5,-1.2) {(g) Staple型Wilson线——准TMD-PDF算符};
+\end{tikzpicture}
+\caption{Staple型Wilson线：$W_{\sqsubset}(b_\perp,L,z) = U_z^\dagger \times U_\perp \times U_z$由三段构成——底边沿$z$正向从0到$z+L$，横向跳跃$\vec b_\perp$，上边沿$z$反向从$z+L+\vec b_\perp$返回$\vec b_\perp$。$L\to\infty$模拟光锥方向上的无穷长Wilson线。\textbf{线性+cusp+pinch-pole发散：}通过除以矩形Wilson圈平方根$\sqrt{Z_E}$（绿色虚线框）来消除。\textbf{来源：}Zhang et al., PRD 106, 094510 (2022)~\cite{Zhang2022renormTMD}。}
+\label{fig:staple_wilson}
+\end{figure}
+
+%==========================================================================
+\section{Wilson圈与Polyakov圈}
+%==========================================================================
+
+\subsection{矩形Wilson圈与静态夸克势}
+
+矩形Wilson圈是\textbf{禁闭的标准探针}——其大时间行为直接定义了静态夸克-反夸克势~\cite{GattringerLang2010}：
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.9]
+  % Coordinates
+  \draw[->] (-0.5,0) -- (5,0) node[right] {空间 $r$};
+  \draw[->] (0,-0.5) -- (0,4) node[above] {时间 $t$};
+
+  % The Wilson loop rectangle
+  \draw[wilson, red!50!black, line width=1.2pt] (0,0) -- (3,0)
+    node[pos=0.3, below, font=\tiny] {$S(m,n,0)$（空间Wilson线）};
+  \draw[wilson, blue!50!black, line width=1.2pt] (3,0) -- (3,3.5)
+    node[pos=0.5, right, font=\tiny] {$T(n,t)$（时间传输子）};
+  \draw[wilson, red!50!black, line width=1.2pt] (3,3.5) -- (0,3.5)
+    node[pos=0.7, above, font=\tiny] {$S(m,n,t)^\dagger$};
+  \draw[wilson, blue!50!black, line width=1.2pt] (0,3.5) -- (0,0)
+    node[pos=0.5, left, font=\tiny] {$T(m,t)^\dagger$};
+
+  % Quark-antiquark pair illustration
+  \node[font=\footnotesize] at (1.5,-0.7) {$Q$（在 $m$）};
+  \node[font=\footnotesize] at (3.8,1.5) {$\bar Q$（在 $n$）};
+
+  % Area filling (plaquettes)
+  \draw[pattern=north east lines, pattern color=green!30] (0,0) rectangle (3,3.5);
+  \node[font=\tiny, green!50!black] at (1.5,1.7) {强耦合展开中};
+  \node[font=\tiny, green!50!black] at (1.5,1.3) {plaquette填充面积};
+
+  \node[font=\footnotesize\bfseries] at (1.5,-1.5) {(h) 矩形Wilson圈——$\langle W_{\mathcal{C}}\rangle \propto e^{-t V(r)}$};
+\end{tikzpicture}
+\caption{矩形Wilson圈：由两条空间Wilson线$S$和两条时间传输子$T$构成的$r\times t$矩形闭合回路。取迹后为规范不变量。\textbf{面积律：}强耦合展开中，$\langle W_{\mathcal{C}}\rangle \propto e^{-\sigma\cdot rt}$——线性禁闭势$V(r)\sim \sigma r$的格点证明。\textbf{量子力学诠释：}$\langle W_{\mathcal{C}}\rangle$为两个静态色源之间的时间关联函数，大$t$行为$\langle W_{\mathcal{C}}\rangle \propto e^{-t V(r)}$。\textbf{来源：}Gattringer \& Lang, §3.3~\cite{GattringerLang2010}。}
+\label{fig:wilson_loop}
+\end{figure}
+
+\subsection{Polyakov圈与禁闭-退禁闭相变}
+
+Polyakov圈是\textbf{纯时间方向}的闭合Wilson线——是有限温度下禁闭-退禁闭相变的\textbf{有序参量}~\cite{GattringerLang2010}：
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.9]
+  % Draw the 3D-ish view
+  \draw[->] (-0.5,0) -- (5,0) node[right] {空间 $\mathbf{x},\mathbf{y}$};
+  \draw[->] (0,-0.5) -- (0,4) node[above] {时间（周期 $N_T$）};
+
+  % Vertical Wilson lines at two spatial positions
+  \draw[wilson, blue!50!black, line width=1.2pt] (1.5,0) -- (1.5,3.5)
+    node[pos=0.5, left, font=\tiny] {$P(\mathbf{m})$};
+  \draw[wilson, red!50!black, line width=1.2pt] (3.5,0) -- (3.5,3.5)
+    node[pos=0.5, right, font=\tiny] {$P(\mathbf{n})^\dagger$};
+
+  % Periodic boundary closing
+  \draw[->, gray, dashed] (1.5,3.5) to[bend left=40] (1.5,0);
+  \draw[->, gray, dashed] (3.5,3.5) to[bend right=40] (3.5,0);
+  \node[font=\tiny, gray] at (1.0,2) {周期边界};
+
+  % Center symmetry illustration
+  \node[font=\footnotesize] at (5.5,2.5) {$Z_3$ 中心对称};
+  \node[font=\tiny] at (5.5,2.0) {$T<T_c$: $\langle P\rangle =0$};
+  \node[font=\tiny] at (5.5,1.6) {$T>T_c$: $\langle P\rangle \neq0$};
+
+  \node[font=\footnotesize\bfseries] at (2.5,-1.0) {(i) Polyakov圈——$P(\mathbf{m})=\operatorname{tr}[\prod_{j=0}^{N_T-1}U_4(\mathbf{m},j)]$};
+\end{tikzpicture}
+\caption{Polyakov圈：纯时间方向的闭合Wilson线，通过周期边界条件自动闭合。\textbf{中心对称性与禁闭：}纯规范理论中$Z_3$中心对称性保证$\langle P\rangle = 0$（禁闭相）——单个静态色荷的自由能无穷大。$T > T_c$时对称性自发破缺，$\langle P\rangle \neq 0$（退禁闭相）。\textbf{动力学费米子}显式破缺$Z_3$中心对称性——相变变为平滑crossover。\textbf{来源：}Gattringer \& Lang, §3.3.5, Ch.12~\cite{GattringerLang2010}。}
+\label{fig:polyakov}
+\end{figure}
+
+%==========================================================================
+\section{三点函数——形状因子与PDF的算符插入}
+%==========================================================================
+
+\subsection{连通三点函数——形状因子}
+
+形状因子的格点计算基于在中间时间片$\tau$处插入\textbf{一个流算符}的三点关联函数~\cite{GattringerLang2010}：
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.9]
+  \draw[->] (-0.5,0) -- (6,0) node[right] {$t$ (时间)};
+
+  % Source, insertion, sink
+  \filldraw (0,1.5) circle (2pt) node[left] {\footnotesize $0$};
+  \filldraw (2.5,1.5) circle (2pt) node[below=6pt] {\footnotesize $\tau$};
+  \filldraw (5,1.5) circle (2pt) node[right] {\footnotesize $t_{\text{sep}}$};
+
+  % Source propagator (0 to tau)
+  \draw[quark] (0,1.5) .. controls (0.8,0.5) and (1.7,0.5) .. (2.5,1.5)
+    node[midway, below, font=\tiny] {$q$};
+  \draw[quark] (0,1.5) .. controls (0.8,2.2) and (1.7,2.2) .. (2.5,1.5)
+    node[midway, above, font=\tiny] {$\bar q$};
+
+  % Current insertion at tau
+  \draw[gluon, red!50!black] (2.5,1.5) -- (2.5,0.3);
+  \node[font=\tiny, red!50!black] at (3.0,0.8) {$V_\mu/A_\mu$};
+  \draw[pattern=north east lines, pattern color=red!20] (2.2,0.3) rectangle (2.8,1.8);
+  \node[font=\tiny, red!50!black, rotate=90] at (1.8,1.5) {\textbf{插入}};
+
+  % Sink propagator (tau to t_sep)
+  \draw[quark] (2.5,1.5) .. controls (3.3,0.5) and (4.2,0.5) .. (5,1.5);
+  \draw[quark] (2.5,1.5) .. controls (3.3,2.2) and (4.2,2.2) .. (5,1.5);
+
+  % Sequential source arrow
+  \draw[->, blue!50!black, thick, dashed] (0,2.5) -- (2.5,2.5)
+    node[midway, above, font=\tiny] {第一传播子 (source $\to$ insertion)};
+  \draw[->, blue!50!black, thick, dashed] (2.5,2.5) -- (5,2.5)
+    node[midway, above, font=\tiny] {第二传播子/顺序源};
+
+  \node[font=\footnotesize\bfseries] at (2.5,-0.7) {(j) 连通三点函数——形状因子/PDF矩阵元};
+\end{tikzpicture}
+\caption{连通三点函数：在时间$\tau$处插入一个流算符$V_\mu$（电磁）或准PDF算符$\mathcal{O}(z)$。$\pi$介子在$0$处产生，在$t_{\text{sep}}$处湮灭。基态矩阵元通过三点/两点函数比值提取。\textbf{顺序源方法：}第二个传播子（$\tau$到$t_{\text{sep}}$）通过一个额外的Dirac求逆获得——避免了二次传播子从头求解的成本。\textbf{来源：}Gattringer \& Lang, §11.4；Fig.\,11.5~\cite{GattringerLang2010}。}
+\label{fig:three_point}
+\end{figure}
+
+%==========================================================================
+\section{四夸克形状因子——TMD软函数提取}
+%==========================================================================
+
+\subsection{大动量转移四夸克算符}
+
+LPC合作组用于提取内禀软函数的\textbf{四夸克赝标量介子形状因子}~\cite{LPC2020soft}涉及两个横向分离的夸克双线型：
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.85]
+  % Incoming pion
+  \draw[very thick, ->] (-2,0) -- (0,0) node[midway, above] {\footnotesize $\pi(P^z)$};
+  % Outgoing pion
+  \draw[very thick, ->] (0,2.5) -- (-2,2.5) node[midway, above] {\footnotesize $\pi(-P^z)$};
+
+  % Four-quark interaction blob
+  \filldraw[fill=gray!20, draw=black] (0.5,0.8) rectangle (1.5,1.7);
+
+  % Quark lines
+  \draw[quark] (0,0.3) to[out=0, in=180] (0.5,1.0);
+  \draw[quark] (0,0.3) to[out=0, in=180] (0.5,1.5);
+  \draw[quark] (0,2.2) to[out=0, in=180] (0.5,1.0);
+  \draw[quark] (0,2.2) to[out=0, in=180] (0.5,1.5);
+
+  % Transverse separation marker
+  \draw[<->, red!50!black] (2.0,1.0) -- (2.0,1.5)
+    node[midway, right, font=\tiny] {$\vec b_\perp$};
+  \node[font=\tiny, red!50!black] at (2.5,1.25) {横向分离};
+
+  % Factorization diagram
+  \node[font=\footnotesize] at (4.5,1.25) {$\xrightarrow{\text{因子化}}$};
+  \node[font=\footnotesize] at (7,2.0) {$S_I(b_\perp)$};
+  \node[font=\footnotesize] at (7,1.5) {$\times$};
+  \node[font=\footnotesize] at (7,1.0) {$\Phi(x,b_\perp,P^z)$};
+  \node[font=\footnotesize] at (7,0.5) {$\times \Phi^\dagger(x',b_\perp,-P^z)$};
+
+  \node[font=\footnotesize\bfseries] at (3.5,-0.7) {(k) 四夸克形状因子——$F(b_\perp,P^z)=S_I\int H\Phi^\dagger\Phi$};
+\end{tikzpicture}
+\caption{四夸克赝标量介子形状因子：$\langle\pi(-\vec P)|(q_1\Gamma q_1)(\vec b_\perp)(q_2\Gamma q_2)(0)|\pi(\vec P)\rangle_c$——两个夸克双线型在空间上横向分离为$\vec b_\perp$。在大动量$P^z$下因子化为内禀软函数$S_I(b_\perp)$与准TMD波函数$\Phi$的乘积。下标注$_c$表示仅保留连通插入。\textbf{来源：}Zhang et al.\ (LPC), PRL 125, 192001 (2020)~\cite{LPC2020soft}。}
+\label{fig:four_quark_FF}
+\end{figure}
+
+%==========================================================================
+\section{线性发散与cusp发散——Wilson线自能}
+%==========================================================================
+
+\subsection{Wilson线自能中的发散结构}
+
+Wilson线自能的蝌蚪图（tadpole）和cusp图是格点上\textbf{线性发散和cusp发散的微扰起源}~\cite{Huo2021self,Chen2018WLrenorm}：
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.95]
+  % Tadpole diagram: gluon loop attached to Wilson line
+  \draw[wilson, red!50!black, line width=1.2pt] (0,0) -- (4,0)
+    node[midway, below=6pt, font=\tiny] {Wilson线 $U(z,0)$};
+  \draw[gluon] (1.2,0) to[out=90, in=180] (2,0.8) to[out=0, in=90] (2.8,0)
+    node[pos=0.5, above, font=\tiny] {$\delta\bar m$};
+  \draw[gluon] (2.8,0) to[out=-90, in=0] (2,-0.8) to[out=180, in=-90] (1.2,0);
+  \node[font=\tiny] at (2,1.3) {\textbf{蝌蚪图（tadpole）}};
+  \node[font=\tiny, red!50!black] at (2,0.9) {$\to e^{-\delta\bar m |z|/a}$ 线性发散};
+
+  % Cusp diagram
+  \draw[wilson, red!50!black, line width=1.2pt] (5.5,0) -- (7,0);
+  \draw[wilson, red!50!black, line width=1.2pt] (7,0) -- (7,1.5);
+  \draw[gluon] (7,0.5) to[out=150, in=-90] (6.2,1.2) to[out=90, in=200] (7,1.8);
+  \node[font=\tiny] at (7,2.2) {\textbf{Cusp发散}};
+  \node[font=\tiny, red!50!black] at (7,1.9) {$\to \Gamma_{\text{cusp}}$};
+
+  % Pinch-pole diagram: two parallel Wilson lines
+  \draw[wilson, red!50!black, line width=1.2pt] (9,0) -- (11.5,0);
+  \draw[wilson, blue!50!black, line width=1.2pt] (9,1.2) -- (11.5,1.2);
+  \draw[gluon, green!50!black] (10,0) -- (10,1.2);
+  \draw[gluon, green!50!black] (10.5,0) -- (10.5,1.2);
+  \node[font=\tiny] at (10.25,1.8) {\textbf{Pinch-pole奇点}};
+  \node[font=\tiny, red!50!black] at (10.25,1.5) {$\to e^{-V(b_\perp)L}$};
+
+  \node[font=\footnotesize\bfseries] at (5.5,-1.2) {(l) Wilson线的三类发散——蝌蚪图（线性）、cusp（对数）、pinch-pole（奇点）};
+\end{tikzpicture}
+\caption{Wilson线的三类发散结构。\textbf{蝌蚪图：}胶子从Wilson线辐射并重新吸收——产生与线长成正比的线性发散$e^{-\delta\bar m |z|/a}$。\textbf{Cusp发散：}在Wilson线的尖角处，胶子的传播产生对数发散——由cusp反常维数$\Gamma_{\text{cusp}}(\alpha_s)$控制。\textbf{Pinch-pole奇点：}两条平行Wilson线之间的胶子交换——物理上等价于重夸克有效势$V(b_\perp)$，产生指数衰减$e^{-V(b_\perp)L}$。\textbf{消除策略：}三种发散均通过除以矩形Wilson圈平方根$\sqrt{Z_E}$来同时消除。\textbf{来源：}Zhang et al., PRD 106, 094510 (2022)~\cite{Zhang2022renormTMD}；Huo et al., NPB 969, 115443 (2021)~\cite{Huo2021self}；Chen et al., NPB 915, 1 (2017)~\cite{Chen2018WLrenorm}。}
+\label{fig:wilson_divergences}
+\end{figure}
+
+%==========================================================================
+\section{格点-连续示意图对比}
+%==========================================================================
+
+\subsection{Minkowski光锥PDF vs.\ Euclidean准PDF}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.85]
+  % LEFT: Minkowski light-cone
+  \draw[->] (0,0) -- (2.5,0) node[right] {$z$};
+  \draw[->] (0,0) -- (0,2.5) node[above] {$t$};
+  \draw[->, red!50!black, very thick] (0,0) -- (2,2) node[right] {$\xi^- = \frac{t-z}{\sqrt{2}}$ (光锥)};
+  \draw[fill=red!10] (0.3,0.8) -- (0.8,0.3) -- (1.8,1.3) -- (1.3,1.8) -- cycle;
+  \node at (1.0,0.9) {\footnotesize $\xi^2=0$};
+  \node[font=\footnotesize] at (1.5,-0.7) {\textbf{Minkowski光锥PDF}};
+  \node[font=\tiny] at (1.5,-1.2) {实时关联函数};
+
+  % RIGHT: Euclidean equal-time
+  \draw[->] (5.5,0) -- (8,0) node[right] {$z$};
+  \draw[->] (5.5,0) -- (5.5,2.5) node[above] {$\tau$};
+  \draw[->, blue!50!black, very thick] (5.5,1.2) -- (7.8,1.2)
+    node[right] {$z$ (空间方向)};
+  \draw[fill=blue!10] (5.5,0.8) rectangle (7.8,1.6);
+  \node at (6.7,1.2) {\footnotesize $z^2>0$, 等时 $t=0$};
+  \node[font=\footnotesize] at (6.7,-0.7) {\textbf{Euclidean准PDF}};
+  \node[font=\tiny] at (6.7,-1.2) {空间等时关联, 格点可算};
+
+  % Bridge arrow
+  \draw[->, very thick, densely dotted, gray] (3.0,1.2) -- (4.5,1.2)
+    node[midway, above, font=\footnotesize] {Wick旋转 $t\to -i\tau$};
+  \node[font=\tiny, gray] at (3.8,1.8) {LaMET大动量Boost};
+
+  \node[font=\footnotesize\bfseries] at (4,-1.7) {示意图：光锥关联 vs.\ 空间等时关联};
+\end{tikzpicture}
+\caption{Minkowski光锥关联（左）vs.\ Euclidean空间等时关联（右——准PDF的基础）。光锥PDF定义于$\xi^2=0$的类光间隔上——不可在欧几里得格点上计算。LaMET用空间方向$z$处的等时关联函数替代——两类关联函数在大动量$P_z$下通过微扰匹配核$C$联系起来。\textbf{来源：}Ji, PRL 110, 262002 (2013)~\cite{Ji2013Euclidean}；Izubuchi et al., PRD 98, 056004 (2018)~\cite{Izubuchi2018}。}
+\label{fig:lightcone_vs_euclidean}
+\end{figure}
+
+%==========================================================================
+\section{图解总结表}
+%==========================================================================
+
+\begin{table}[H]
+\centering
+\caption{格点QCD中12类常见费曼图的分类总结}
+\label{tab:diagram_summary}
+\small
+\begin{tabular}{p{1cm}p{2.5cm}p{2cm}p{3.5cm}p{3cm}}
+\toprule
+\textbf{图号} & \textbf{名称} & \textbf{拓扑类型} & \textbf{格点算符/可观测量} & \textbf{信噪比/计算难度} \\
+\midrule
+(a) & 连通介子 & 连通 & $\langle\pi^+ \bar\pi^+\rangle$, Wilcox收缩 & 最优（$e^{-m_\pi t}$）\\
+(b) & 连通重子 & 连通 & 核子三点函数, $\epsilon^{abc}$ & 中等（$e^{-m_N t}$）\\
+(c) & 非连通（单态） & 连通+非连通 & 味单态介子, 奇异PDF & 极差（$1/\sqrt{V}$发散）\\
+(d) & Hopping展开 & 路径求和 & $D^{-1}=\sum\kappa^j H^j$ & 仅重夸克实用 \\
+(e) & 闭合费米子环 & 非连通 & $\det[D]$, HMC行列式 & 需赝费米子表示 \\
+(f) & 直Wilson线 & 连通 & 准PDF算符 & 需消除线性发散 \\
+(g) & Staple Wilson线 & 连通 & 准TMD-PDF算符 & 需Wilson圈减除 \\
+(h) & 矩形Wilson圈 & 闭合回路 & 静态势 $V(r)$ & 良好（纯规范） \\
+(i) & Polyakov圈 & 闭合回路 & 禁闭有序参量 & 良好（纯规范） \\
+(j) & 连通三点函数 & 连通 & 形状因子/PDF矩阵元 & 中等（需顺序源）\\
+(k) & 四夸克形状因子 & 连通+因子化 & $S_I(b_\perp)$软函数 & 困难（四夸克缩并）\\
+(l) & 发散图 & 非连通子图 & Wilson线自能 & 需非微扰消除 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%==========================================================================
+\begin{thebibliography}{99}
+
+\bibitem{GattringerLang2010}
+C.~Gattringer and C.~B.~Lang,
+\textit{Quantum Chromodynamics on the Lattice}, Springer (2010).
+\\\textbf{[来源:} \texttt{books/Quantum Chromodynamics on the Lattice.pdf}\textbf{]}。
+Fig.\,5.1: Hopping展开传播子; Fig.\,6.1: 连通/非连通图; Fig.\,6.2: 淬火/动力学费米子线; §3.3: Wilson圈与Polyakov圈; §3.4: 静态势与弦张力。
+
+\bibitem{Gupta1997intro}
+R.~Gupta, ``Introduction to Lattice QCD,'' arXiv:hep-lat/9807028 (1997).
+\\\textbf{[来源:} \texttt{books/INTRODUCTION TO LATTICE QCD.pdf}\textbf{]}。
+Fig.\,13: Wilson圈的最小tiling; §17: 介子/重子关联函数的缩并展开图。
+
+\bibitem{PeskinSchroeder1995}
+M.~E.~Peskin and D.~V.~Schroeder,
+\textit{An Introduction to Quantum Field Theory}, Westview Press (1995).
+\\\textbf{[来源:} \texttt{books/An Introduction to Quantum Field Theory.pdf}\textbf{]}。
+Fig.\,17.14-17.20: 共线辐射、部分子分裂和DGLAP演化的Feynman图。
+
+\bibitem{Ji2013Euclidean}
+X.~Ji, ``Parton physics on a Euclidean lattice,''
+Phys.\ Rev.\ Lett.\ \textbf{110}, 262002 (2013), arXiv:1305.1539.
+\\\textbf{[来源:} \texttt{docs/Parton Physics on Euclidean Lattice.pdf}\textbf{]}
+——Eq.\,(7)定义准PDF算符（直空间Wilson线）；Eq.\,(14)定义准TMD算符（staple Wilson线）。
+
+\bibitem{Izubuchi2018}
+T.~Izubuchi, X.~Ji, L.~Jin, I.~W.~Stewart, and Y.~Zhao,
+``Factorization theorem relating Euclidean and light-cone parton distributions,''
+Phys.\ Rev.\ D \textbf{98}, 056004 (2018), arXiv:1801.03917.
+\\\textbf{[来源:} \texttt{docs/Factorization Theorem Relating Euclidean and Light-Cone Parton Distributions.pdf}\textbf{]}
+
+\bibitem{Zhang2022renormTMD}
+K.~Zhang \textit{et al.} (LPC),
+``Renormalization of transverse-momentum-dependent parton distribution on the lattice,''
+Phys.\ Rev.\ D \textbf{106}, 094510 (2022), arXiv:2205.13402.
+\\\textbf{[来源:} \texttt{docs/Renormalization of transverse-momentum-dependent parton distribution on the lattice.pdf}\textbf{]}
+——Fig.\,1: Staple型Wilson线的图解; Fig.\,4: Wilson圈减除的五格距验证。
+
+\bibitem{Huo2021self}
+Y.-K.~Huo \textit{et al.} (LPC),
+``Self-renormalization of quasi-light-front correlators on the lattice,''
+Nucl.\ Phys.\ B \textbf{969}, 115443 (2021), arXiv:2103.02965.
+\\\textbf{[来源:} \texttt{docs/Self-Renormalization of Quasi-Light-Front Correlators on the Lattice.pdf}\textbf{]}
+
+\bibitem{Chen2018WLrenorm}
+J.-W.~Chen, X.~Ji, and J.-H.~Zhang,
+``Improved quasi parton distribution through Wilson line renormalization,''
+Nucl.\ Phys.\ B \textbf{915}, 1 (2017), arXiv:1609.08102.
+\\\textbf{[来源:} \texttt{docs/Improved quasi parton distribution through Wilson line renormalization.pdf}\textbf{]}
+
+\bibitem{LPC2020soft}
+Q.-A.~Zhang \textit{et al.} (LPC),
+``Lattice-QCD calculations of TMD soft function through large-momentum effective theory,''
+Phys.\ Rev.\ Lett.\ \textbf{125}, 192001 (2020), arXiv:2005.14572.
+\\\textbf{[来源:} \texttt{docs/Lattice-QCD Calculations of TMD Soft Function Through Large-Momentum Effective Theory.pdf}\textbf{]}
+——Fig.\,1: 赝标量介子形状因子的连通插入示意图。
+
+\bibitem{He2024unpolTMD}
+J.-C.~He \textit{et al.} (LPC),
+``Unpolarized TMD parton distributions of the nucleon from lattice QCD,''
+Phys.\ Rev.\ D \textbf{109}, 114513 (2024), arXiv:2211.02340.
+\\\textbf{[来源:} \texttt{docs/Unpolarized Transverse-Momentum-Dependent Parton Distributions of the Nucleon from Lattice QCD.pdf}\textbf{]}
+——Fig.\,1: 准TMD-PDF的staple型Wilson线示意图。
+
+\bibitem{Chu2023soft}
+M.-H.~Chu \textit{et al.} (LPC),
+``Lattice calculation of the intrinsic soft function and the Collins-Soper kernel,''
+JHEP \textbf{08}, 172 (2023), arXiv:2306.06488.
+\\\textbf{[来源:} \texttt{docs/Lattice Calculation of the Intrinsic Soft Function and the Collins-Soper Kernel.pdf}\textbf{]}
+
+\bibitem{NoteGluonPDFs}
+``Note of gluon PDFs,'' 内部笔记。
+\\\textbf{[来源:} \texttt{docs/Note of gluon PDFs.pdf}\textbf{]}和\texttt{文档/note\_of\_gluon\_PDFs.pdf}
+
+\end{thebibliography}
+
+\vspace{0.5cm}
+\noindent\rule{\textwidth}{0.5pt}
+\small
+\textbf{交叉参考建议：}本图解目录应与同一\texttt{补充/}目录下的以下文件配合使用：
+\begin{itemize}[nosep]
+    \item \texttt{格点QCD中的连通图与非连通图.pdf}——Wick缩并与图拓扑的详细推导
+    \item \texttt{格点QCD中的Wilson线.pdf}——Wilson线的发散结构与重整化
+    \item \texttt{格点QCD中的部分子分布函数.pdf}——准PDF算符的完整理论
+    \item \texttt{格点QCD中的TMD\_PDF.pdf}——TMD-PDF中的staple结构
+    \item \texttt{格点QCD中的形状因子.pdf}——三点函数与顺序源方法
+    \item \texttt{格点QCD中的关联函数.pdf}——两点/三点函数与指数拟合
+\end{itemize}
+
+\end{document}
