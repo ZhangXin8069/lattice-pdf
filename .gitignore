@@ -49,5 +49,6 @@ lib/*
 *.nav
 *.snm
 *.xdv
+*.vrb
 *.fdb_latexmk
 ./refer/.*.log
