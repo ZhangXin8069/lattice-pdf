@@ -1,0 +1,34 @@
+\frametitle{GPU 加速策略}
+\small
+\textbf{硬件后端抽象}：
+\begin{lstlisting}
+try:
+    import cupy as cp
+    HAS_CUPY = True
+except ImportError:
+    cp = np  # fallback to numpy
+    HAS_CUPY = False
+
+try:
+    from opt_einsum import contract  # optimized tensor contractions
+except ImportError:
+    contract = np.einsum              # fallback
+\end{lstlisting}
+
+\textbf{GPU 计算的关键操作}（均在 GPU 上执行）：
+\begin{itemize}
+  \item \textbf{Plaquette 构造}：4 次 \texttt{contract} 调用，每次缩并 $(N_t,N_z,N_y,N_x,3,3) \otimes (N_t,N_z,N_y,N_x,3,3)$
+  \item \textbf{Clover 场强}：16 次 plaquette 构造 + 反厄米组合
+  \item \textbf{VVV 收缩}：逐层循环，每层 6 次 \texttt{contract}（$\varepsilon_{ijk}$ 展开）
+  \item \textbf{质子 2pt}：每对 $(t_{\text{sink}}, t_{\text{src}})$ 2 次五阶 \texttt{contract}
+  \item \textbf{OPE 算符}：对每个 $z$ 值，5 步 \texttt{contract} 链
+\end{itemize}
+
+\textbf{MPI 并行方案}（\texttt{Calc\_ope\_unpol.py}）：
+\begin{itemize}
+  \item 3 个 MPI rank，每个计算一个 Lorentz 分量组合
+  \item 每个 rank 独立计算完整的 $(N_t, N_x, N_y, \delta_z)$ OPE 数组
+  \item 最后在主 rank 汇总求和
+\end{itemize}
+
+\textbf{显存管理}：对大格点（如 $48^3$），VVV 需要分 $x$ 层计算以避免 OOM。
