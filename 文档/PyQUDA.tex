@@ -1,0 +1,1210 @@
+\documentclass[12pt,a4paper]{ctexart}
+
+% === 页面设置 ===
+\usepackage[top=2.5cm,bottom=2.5cm,left=2.5cm,right=2.5cm]{geometry}
+
+% === 数学和物理 ===
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{physics}
+
+% === 图形和表格 ===
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{subcaption}
+
+% === 代码 ===
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{upquote}
+
+\definecolor{codebg}{rgb}{0.95,0.95,0.95}
+\definecolor{codeframe}{rgb}{0.7,0.7,0.7}
+\definecolor{commentcolor}{rgb}{0.3,0.5,0.3}
+\definecolor{stringcolor}{rgb}{0.7,0.3,0.1}
+\definecolor{keywordcolor}{rgb}{0.2,0.2,0.7}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    backgroundcolor=\color{codebg},
+    frame=single,
+    rulecolor=\color{codeframe},
+    breaklines=true,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    xleftmargin=2em,
+    framexleftmargin=1.5em,
+    commentstyle=\color{commentcolor},
+    stringstyle=\color{stringcolor},
+    keywordstyle=\color{keywordcolor}\bfseries,
+    showstringspaces=false,
+    tabsize=4,
+    captionpos=b,
+}
+
+% === 引用 ===
+\usepackage{hyperref}
+\usepackage[numbers,sort&compress]{natbib}
+
+% === 其他 ===
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{multirow}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue,
+}
+
+% === 标题信息 ===
+\title{\heiti PyQUDA \\[3pt] \large QUDA的Python/Cython接口使用手册}
+\author{张鑫}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent
+PyQUDA是QUDA（用于格点QCD的GPU加速库）的Python/Cython封装。它结合了Python的易用性和QUDA的GPU高性能计算能力，支持多GPU分布式计算（通过MPI for Python），并提供完整的格点QCD计算功能：夸克传播子求解（Wilson/Clover/HISQ费米子作用量，含多重网格支持）、混合蒙特卡洛（HMC）、规范固定、规范涂抹、费米子涂抹、梯度流以及10余种格点数据格式的文件I/O。本手册详细介绍PyQUDA的安装配置、三层架构、核心功能、示例演示以及完整的API接口清单。
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%=============================================================================
+\section{项目概述}
+%=============================================================================
+
+PyQUDA是一个用Cython编写的QUDA Python封装库，由CLQCD合作组开发和维护。该项目旨在利用Python中的优化线性代数库（如CuPy、PyTorch、DPNP）与QUDA的GPU计算能力相结合，实现高性能的格点QCD研究运算。
+
+\subsection{主要特性}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{多GPU支持}：通过mpi4py实现MPI分布式计算，支持4D进程网格拓扑
+    \item \textbf{多后端GPU加速}：支持CuPy（NVIDIA CUDA/AMD HIP）、PyTorch（CUDA/HIP/SYCL）、DPNP（Intel GPU）及numpy（CPU回退）
+    \item \textbf{丰富的文件I/O}：支持Chroma、MILC、KYU、XQCD、NERSC、OpenQCD、ILDG、NPY、HDF5等10余种格式
+    \item \textbf{多种夸克作用量}：Wilson、Clover（各向同性/各向异性）、HISQ费米子
+    \item \textbf{多重网格求解器}：支持Wilson和Clover费米子的多重网格加速
+    \item \textbf{HMC模拟}：纯规范场、1/2味Clover费米子、N味HISQ费米子
+    \item \textbf{规范操作}：规范固定、规范涂抹（APE/Stout/HYP）、梯度流（Wilson/Symanzik）
+    \item \textbf{费米子涂抹}：高斯/Wuppertal涂抹
+\end{itemize}
+
+\subsection{三层架构}
+
+PyQUDA采用清晰的三层架构设计：
+
+\begin{figure}[H]
+\centering
+\fbox{\parbox{0.9\textwidth}{\centering
+\vspace{0.3cm}
+\textbf{Layer 2: pyquda\_utils} — 高级工具脚本 \\
+\hspace{1em}core, source, gamma, phase, wilson\_loop, checksum, convert, fft \\[5pt]
+\textbf{Layer 2: pyquda\_io} — 文件格式I/O \\
+\hspace{1em}chroma, milc, kyu, xqcd, nersc, openqcd, ildg, npy, lime \\[5pt]
+\textbf{Layer 2: pyquda\_plugins} — C/CUDA插件系统 \\
+\hspace{1em}pycontract (夸克收缩), pygwu (overlap费米子) \\[8pt]
+\rule{\linewidth}{0.5pt} \\[3pt]
+\textbf{Layer 1: pyquda\_utils / pyquda\_io / pyquda\_plugins} \\
+\rule{\linewidth}{0.5pt} \\[3pt]
+\textbf{Layer 0: pyquda\_core} — Cython绑定（libquda） \\
+\hspace{1em}pyquda (QUDA API), pyquda\_comm (MPI通信+数组后端)
+\vspace{0.3cm}}}
+\caption{PyQUDA 三层架构}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{PyPI发布}
+
+两个独立的PyPI包：
+\begin{itemize}[leftmargin=*]
+    \item \textbf{PyQUDA}（核心层）：依赖mpi4py、numpy，提供pyquda和pyquda\_comm模块
+    \item \textbf{PyQUDA-Utils}（工具层）：依赖PyQUDA，提供pyquda\_utils、pyquda\_io、pyquda\_plugins模块
+\end{itemize}
+
+%=============================================================================
+\section{安装}
+%=============================================================================
+
+\subsection{前置要求}
+
+\begin{table}[H]
+\centering
+\caption{安装前置要求}
+\label{tab:prerequisites}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{组件} & \textbf{说明} \\
+\midrule
+QUDA & 编译安装的QUDA库（develop分支，\texttt{\$QUDA\_PATH}指向build/usqcd） \\
+CUDA/ROCm & GPU计算工具链 \\
+MPI & 支持GPU直连的MPI实现（如OpenMPI） \\
+Python & $\ge$ 3.8 \\
+pip依赖 & numpy, mpi4py, cupy (或torch/dpnp) \\
+编译依赖 & Cython, setuptools, wheel \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{从PyPI安装（推荐）}
+
+\begin{lstlisting}[caption={从PyPI安装}, label={lst:pypi_install}]
+# 确保QUDA_PATH指向QUDA安装目录
+export QUDA_PATH=/path/to/quda/build/usqcd
+
+# 安装核心包和工具包
+python3 -m pip install pyquda pyquda-utils
+\end{lstlisting}
+
+\subsection{从源码安装}
+
+\begin{lstlisting}[caption={从源码编译安装}, label={lst:source_install}]
+export QUDA_PATH=/path/to/quda/build/usqcd
+
+# 克隆仓库（含子模块）
+git clone --recursive https://github.com/CLQCD/PyQUDA.git
+cd PyQUDA
+
+# 安装核心Cython绑定
+cd pyquda_core
+python3 -m pip install .
+cd ..
+
+# 安装工具层
+python3 -m pip install .
+\end{lstlisting}
+
+\subsection{开发模式安装（原地构建）}
+
+\begin{lstlisting}[caption={原地构建（开发模式）}, label={lst:dev_install}]
+export QUDA_PATH=/path/to/quda/build/usqcd
+git clone --recursive https://github.com/CLQCD/PyQUDA.git
+cd PyQUDA
+
+# 原地构建Cython扩展
+cd pyquda_core
+python3 setup.py build_ext --inplace
+cd ..
+
+# 创建符号链接
+python3 setup.py egg_info
+ln -s pyquda_core/pyquda_comm ./
+ln -s pyquda_core/pyquda ./
+\end{lstlisting}
+
+注意：从其他目录运行脚本时需将PyQUDA根目录添加到\texttt{sys.path}。
+
+%=============================================================================
+\section{初始化与网格拓扑}
+%=============================================================================
+
+\subsection{基本初始化}
+
+\begin{lstlisting}[caption={PyQUDA初始化}, label={lst:init}]
+from pyquda import init
+from pyquda_utils import core
+
+# 方法1：简单初始化
+core.init(resource_path=".cache/quda")
+
+# 方法2：使用pyquda.init
+from pyquda_comm import initGrid, initDevice
+from pyquda import initQUDA
+
+latt_info = core.LatticeInfo([24, 24, 24, 72])  # [Lx, Ly, Lz, Lt]
+initGrid(latt_info.grid_size)                    # 4D进程网格
+initDevice(0)                                    # 选择设备
+initQUDA()                                       # 初始化QUDA
+\end{lstlisting}
+
+\subsection{LatticeInfo}
+
+\begin{lstlisting}[caption={格点信息对象}, label={lst:lattice_info}]
+from pyquda_utils.core import LatticeInfo
+
+# 创建格点信息
+latt_info = LatticeInfo(
+    [24, 24, 24, 72],          # [Lx, Ly, Lz, Lt]
+    grid_size=[1, 1, 1, 4],    # 4D进程网格
+    t_boundary=-1,              # 时间边界条件 (-1: 反周期)
+    anisotropy=1.0,             # 各向异性系数
+)
+
+# 访问属性
+print(latt_info.Gs)   # 空间点总数
+print(latt_info.Gt)   # 时间点总数
+print(latt_info.volume)  # 总格点数
+\end{lstlisting}
+
+\subsection{进程网格映射类型}
+
+支持以下网格映射策略：
+\begin{itemize}[leftmargin=*]
+    \item \texttt{default}：默认映射
+    \item \texttt{t\_fastest}：时间维度最快变化
+    \item \texttt{x\_fastest}：空间维度最快变化
+    \item \texttt{minimize}：最小化通信面
+    \item \texttt{shared}：共享内存映射
+    \item \texttt{dist\_graph}：分布式图映射
+\end{itemize}
+
+%=============================================================================
+\section{格点场类型系统}
+%=============================================================================
+
+PyQUDA提供了分层的格点场类型系统。
+
+\subsection{场类型层次}
+
+\begin{lstlisting}[caption={格点场类型}, label={lst:field_types}]
+from pyquda_comm.field import (
+    LatticeInfo,          # 格点几何元数据
+    LatticeGauge,         # 规范场 U_mu(x): [Nc, Nc, Nd, Lx, Ly, Lz, Lt]
+    LatticeFermion,       # 费米子场: [Ns, Nc, Lx, Ly, Lz, Lt]
+    LatticePropagator,    # 传播子: [Ns, Nc, Ns, Nc, Lx, Ly, Lz, Lt]
+    LatticeStaggeredFermion,  # 交错费米子
+    LatticeMom,           # 动量场 (HMC)
+    LatticeClover,        # Clover项
+    LatticeRotation,      # 旋转矩阵 (规范固定)
+    MultiLatticeFermion,  # 多源费米子
+)
+\end{lstlisting}
+
+\subsection{场的基本操作}
+
+\begin{lstlisting}[caption={场的创建和操作}, label={lst:field_ops}]
+# 创建规范场
+gauge = LatticeGauge(latt_info)
+
+# 加载规范组态
+gauge.loadNPYGauge("path/to/config.npy")
+gauge.loadChromaGauge("path/to/config.lime")
+
+# 保存规范场
+gauge.saveNPYGauge("output.npy")
+
+# 偶-奇预处理
+gauge_even = gauge.even
+gauge_odd = gauge.odd
+
+# 规范化检查
+checksum = gauge.checksum()
+\end{lstlisting}
+
+\subsection{场的类型（pyquda.field扩展）}
+
+\texttt{pyquda/field.py}在\texttt{pyquda\_comm}的基础场上添加了高级方法：
+
+\begin{lstlisting}[caption={LatticeGauge 高级方法}]
+class LatticeGauge:
+    # HDF5 I/O
+    def loadHDF5Gauge(self, path): ...
+    def saveHDF5Gauge(self, path): ...
+
+    # 规范场操作（通过gauge_dirac属性）
+    @property
+    def gauge_dirac(self) -> GaugeDirac: ...
+
+    # 涂抹
+    def smearAPE(self, coeff, steps): ...
+    def smearStout(self, coeff, steps): ...
+    def smearHYP(self, coeff, steps): ...
+
+    # 梯度流
+    def wflow(self, steps, step_size): ...
+    def symanzikFlow(self, steps, step_size): ...
+
+    # 规范固定
+    def gaugeFixingOVR(self, tolerance): ...
+    def gaugeFixingFFT(self): ...
+
+    # 物理观测量
+    def plaquette(self): ...
+    def polyakov(self): ...
+    def topologicalCharge(self): ...
+\end{lstlisting}
+
+%=============================================================================
+\section{Dirac算子}
+%=============================================================================
+
+\subsection{算子层次结构}
+
+\begin{figure}[H]
+\centering
+\fbox{\parbox{0.9\textwidth}{\centering
+\vspace{0.3cm}
+\textbf{Dirac}（抽象基类） \\
+$\downarrow$ \\
+\textbf{FermionDirac} — Wilson/Clover费米子 + 多重网格 \\
+$\downarrow$ \\
+WilsonDirac / CloverWilsonDirac \\[5pt]
+\textbf{StaggeredFermionDirac} — 交错费米子 \\
+$\downarrow$ \\
+StaggeredDirac / HISQDirac \\[5pt]
+\textbf{GaugeDirac} — 规范场操作（涂抹、流动、固定）
+\vspace{0.3cm}}}
+\caption{Dirac算子继承层次}
+\label{fig:dirac}
+\end{figure}
+
+\subsection{创建和使用Dirac算子}
+
+\begin{lstlisting}[caption={Dirac算子使用示例}, label={lst:dirac}]
+from pyquda_utils.core import getWilson, getClover, getHISQ
+
+# Wilson费米子
+wilson_dirac = getWilson(latt_info, gauge, mass=-0.2770)
+
+# Clover费米子（自动创建Clover项）
+clover_dirac = getClover(
+    latt_info, gauge, mass=-0.2770,
+    clover_coeff=1.0,            # clover系数
+    multigrid=True,              # 启用多重网格
+)
+
+# HISQ费米子
+hisq_dirac = getHISQ(latt_info, gauge, mass=0.05)
+\end{lstlisting}
+
+\subsection{传播子求解}
+
+\begin{lstlisting}[caption={夸克传播子求解}, label={lst:invert}]
+from pyquda_utils.core import invert
+from pyquda_utils.source import wall
+
+# 墙源传播子
+prop = invert(
+    clover_dirac,
+    wall([24, 24, 24, 72], latt_info),  # 源矢量
+)
+
+# 多源传播子
+props = invert(
+    clover_dirac,
+    [wall([24, 24, 24, 72], latt_info) for _ in range(4)],  # 4源
+)
+
+# 点源传播子
+from pyquda_utils.source import point
+prop = invert(clover_dirac, point(latt_info, [0, 0, 0, 0]))
+\end{lstlisting}
+
+\subsection{Dirac算子方法}
+
+\begin{lstlisting}[caption={FermionDirac 关键方法}]
+class FermionDirac:
+    def invert(self, source, mass=None, tol=1e-12, maxiter=10000): ...
+    def invertRestart(self, source, mass=None, ...): ...
+    def invertPC(self, source, mass=None, ...): ...       # 偶-奇预处理
+    def invertCloverPC(self, source, mass=None, ...): ...
+    def invertMultiSrc(self, sources, mass=None, ...): ...  # 多源同时求解
+    def invertMultiSrcRestart(self, sources, mass=None, ...): ...
+    def mat(self, vector): ...            # 矩阵乘法
+    def matDagMat(self, vector): ...      # D^dag * D
+    def dslash(self, vector): ...         # Dslash算子
+    def performance(self): ...            # 性能报告
+\end{lstlisting}
+
+\subsection{精度控制}
+
+全局精度预设：
+\begin{itemize}[leftmargin=*]
+    \item \texttt{none}：不配置精度
+    \item \texttt{invert}：配置反演精度（double/half/single混合）
+    \item \texttt{multishift}：多shift求解精度
+    \item \texttt{multigrid}：多重网格精度
+\end{itemize}
+
+全局重构预设（减少内存占用）：
+\begin{itemize}[leftmargin=*]
+    \item \texttt{none}：不重构
+    \item \texttt{wilson}：Wilson费米子12/8重构
+    \item \texttt{staggered}：交错费米子13/9重构
+\end{itemize}
+
+%=============================================================================
+\section{HMC（混合蒙特卡洛）}
+%=============================================================================
+
+\subsection{HMC使用示例}
+
+\begin{lstlisting}[caption={淬火HMC示例}, label={lst:hmc_example}]
+from math import exp
+from pyquda.action import GaugeAction
+from pyquda.action.abstract import LoopParam
+from pyquda.hmc import HMC, Integrator
+from pyquda_utils import core
+from pyquda_utils.core import X, Y, Z, T
+
+# 初始化
+core.init(resource_path=".cache/quda")
+latt_info = core.LatticeInfo([16, 16, 16, 32])
+
+# 定义规范作用量
+u_0 = 0.855453; beta = 6.20
+loop_param = LoopParam(
+    [[X, Y, -X, -Y], [X, Z, -X, -Z], [Y, Z, -Y, -Z],
+     [X, T, -X, -T], [Y, T, -Y, -T], [Z, T, -Z, -T]],
+    [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+)
+
+# 自定义积分器
+class O2Nf1Ng0V(Integrator):
+    def integrate(self, updateGauge, updateMom, t):
+        dt = t / self.n_steps
+        for _ in range(self.n_steps):
+            updateMom(dt / 2)
+            updateGauge(dt)
+            updateMom(dt / 2)
+
+# 创建HMC
+hmc = HMC(latt_info,
+    [GaugeAction(latt_info, loop_param, beta)],
+    O2Nf1Ng0V(n_steps=100))
+
+# 运行HMC
+gauge = core.LatticeGauge(latt_info)
+hmc.initialize(10086, gauge)
+
+for i in range(2000):
+    hmc.gaussMom()
+    energy_old = hmc.momAction() + hmc.gaugeAction()
+    hmc.integrate(1.0, 2e-14)
+    energy = hmc.momAction() + hmc.gaugeAction()
+    accept = hmc.accept(energy - energy_old)
+    if accept or i < 500:  # 热化500步
+        hmc.saveGauge(gauge)
+    else:
+        hmc.loadGauge(gauge)
+\end{lstlisting}
+
+\subsection{内置积分器}
+
+\begin{table}[H]
+\centering
+\caption{内置辛积分器}
+\label{tab:integrators}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{积分器} & \textbf{说明} \\
+\midrule
+\texttt{INT\_3G1F} & 3规范力/1费米子力 \\
+\texttt{O2Nf1Ng0V} & 2阶辛，1费米子力，0规范力，速度Verlet \\
+\texttt{O2Nf1Ng0P} & 同上，位置Verlet \\
+\texttt{O2Nf2Ng0V} & 2阶辛，2费米子力 \\
+\texttt{O2Nf2Ng0P} & 同上，位置Verlet \\
+\texttt{O4Nf5Ng0V} & 4阶辛，5费米子力 \\
+\texttt{O4Nf5Ng0P} & 同上，位置Verlet \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{HMC 类方法}
+
+\begin{lstlisting}[caption={HMC 完整接口}]
+class HMC:
+    def __init__(self, latt_info, monomials, integrator): ...
+
+    def initialize(self, seed, gauge): ...
+    def gaussMom(self): ...
+    def samplePhi(self): ...
+    def integrate(self, t, tol): ...
+    def accept(self, dE) -> bool: ...
+
+    # 作用量计算
+    def gaugeAction(self) -> float: ...
+    def fermionAction(self) -> float: ...
+    def momAction(self) -> float: ...
+
+    # 观测量
+    def plaquette(self) -> float: ...
+    def polyakovLoop(self) -> float: ...
+    def energy(self) -> float: ...
+    def qcharge(self) -> float: ...
+    def qchargeDensity(self) -> float: ...
+
+    # 规范场管理
+    def saveGauge(self, gauge): ...
+    def loadGauge(self, gauge): ...
+\end{lstlisting}
+
+\subsection{费米子作用量}
+
+\begin{lstlisting}[caption={费米子作用量}]
+# Clover-Wilson费米子（1/2味）
+from pyquda.action.clover_wilson import CloverWilsonAction
+clover_action = CloverWilsonAction(latt_info, gauge, mass, clover_coeff, n_flavor=2)
+
+# HISQ费米子（N味）
+from pyquda.action.hisq import HISQAction
+hisq_action = HISQAction(latt_info, gauge, mass, n_flavor=4)
+
+# 多重HISQ（共享fat/long链接）
+from pyquda.action.hisq import MultiHISQAction
+multi_hisq = MultiHISQAction(latt_info, gauge, [mass1, mass2], n_flavor=2)
+\end{lstlisting}
+
+%=============================================================================
+\section{规范操作}
+%=============================================================================
+
+\subsection{规范涂抹}
+
+通过\texttt{GaugeDirac}接口提供AP、Stout和HYP涂抹。
+
+\begin{lstlisting}[caption={规范涂抹}]
+# 获取GaugeDirac
+gd = gauge.gauge_dirac
+
+# APE涂抹
+gauge.smearAPE(coeff=0.5, steps=10)
+gauge.smearStout(coeff=0.1, steps=10)
+gauge.smearHYP(coeff=0.5, steps=10)
+\end{lstlisting}
+
+\subsection{梯度流}
+
+\begin{lstlisting}[caption={梯度流}]
+# Wilson流
+gauge.wflow(steps=100, step_size=0.01)
+
+# Symanzik流
+gauge.symanzikFlow(steps=100, step_size=0.01)
+
+# 流标度确定 (t0, w0)
+from pyquda.dirac.gauge import GaugeDirac
+gd = GaugeDirac(latt_info)
+gd.wflow_scale_determination(gauge, steps=100, step_size=0.01)
+\end{lstlisting}
+
+\subsection{规范固定}
+
+\begin{lstlisting}[caption={规范固定}]
+# 过松弛方法 (OVR)
+gauge.gaugeFixingOVR(tolerance=1e-12)
+
+# 快速傅里叶变换方法 (FFT)
+gauge.gaugeFixingFFT()
+\end{lstlisting}
+
+\subsection{物理观测量}
+
+\begin{lstlisting}[caption={规范观测量}]
+# Plaquette
+plaq = gauge.plaquette()
+
+# Polyakov圈
+poly = gauge.polyakov()
+
+# 拓扑荷
+Q = gauge.topologicalCharge()
+
+# 规范作用量密度
+E = gauge.energy()
+\end{lstlisting}
+
+%=============================================================================
+\section{文件I/O}
+%=============================================================================
+
+PyQUDA支持10余种格点数据格式的读写。
+
+\subsection{支持的格式}
+
+\begin{table}[H]
+\centering
+\caption{文件I/O格式支持矩阵}
+\label{tab:io_formats}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{格式} & \textbf{规范读} & \textbf{规范写} & \textbf{传播子读} & \textbf{传播子写} \\
+\midrule
+Chroma (SciDAC/LIME) & $\checkmark$ & — & $\checkmark$ & — \\
+MILC & $\checkmark$ & $\checkmark$ & $\checkmark$ & — \\
+KYU & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\checkmark$ \\
+XQCD & — & — & $\checkmark$ & $\checkmark$ \\
+NERSC & $\checkmark$ & $\checkmark$ & — & — \\
+OpenQCD & $\checkmark$ & $\checkmark$ & — & — \\
+ILDG & $\checkmark$ & — & — & — \\
+NPY (numpy) & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\checkmark$ \\
+HDF5 (h5py) & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\checkmark$ \\
+General (自定义) & $\checkmark$ & $\checkmark$ & — & — \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{加载/保存规范组态}
+
+\begin{lstlisting}[caption={规范组态I/O}]
+from pyquda_io import chroma, milc, npy
+
+# Chroma格式
+gauge = chroma.readChromaGauge("config.lime", latt_info)
+
+# MILC格式
+gauge = milc.readMILCGauge("config.milc", latt_info)
+
+# KYU格式
+from pyquda_io import kyu
+kyu.writeKYUGauge("config.kyu", gauge)
+
+# NPY格式
+npy.writeNPYGauge("config.npy", gauge)
+gauge = npy.readNPYGauge("config.npy", latt_info)
+
+# HDF5格式
+gauge.saveHDF5Gauge("config.h5")
+gauge.loadHDF5Gauge("config.h5")
+\end{lstlisting}
+
+\subsection{校验和}
+
+\begin{lstlisting}[caption={校验和验证}]
+from pyquda_utils.checksum import checksum
+
+# SciDAC风格校验和（CRC32 + rank-based XOR）
+sum_a, sum_b = gauge.checksum()
+\end{lstlisting}
+
+%=============================================================================
+\section{Gamma矩阵系统}
+%=============================================================================
+
+\begin{lstlisting}[caption={Gamma矩阵运算}]
+from pyquda.gamma import Gamma, Projector
+
+# 基本Gamma矩阵
+g5 = Gamma(15)     # gamma_5
+g0 = Gamma(0)      # gamma_t (DeGrand-Rossi基)
+g1 = Gamma(1)      # gamma_x
+g2 = Gamma(2)      # gamma_y
+g3 = Gamma(3)      # gamma_z
+
+# Gamma矩阵运算
+g_plus = (g0 + g3) / 2    # (1+gamma_3)/2 投影算符
+g5_g0 = g5 @ g0           # gamma_5 * gamma_t
+g5g0_T = g5_g0.T          # 转置
+g5g0_H = g5_g0.H          # 厄米共轭
+
+# 自定义投影算符
+proj = Projector([
+    0.5, 0, 0, 0.5,    # 第一行
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+    0.5, 0, 0, 0.5,    # 最后一行
+])  # (1+gamma_3)/2
+\end{lstlisting}
+
+\subsection{Gamma × 传播子}
+
+\texttt{pyquda\_utils/gamma.py}通过monkey-patching为\texttt{LatticeFermion}和\texttt{LatticePropagator}添加矩阵乘法：
+
+\begin{lstlisting}[caption={Gamma × 传播子操作}]
+from pyquda_utils.gamma import *  # 自动添加 __matmul__ 到场类型
+
+# gamma_5 @ 传播子
+result = Gamma(15) @ prop
+
+# 投影算符 @ 费米子场
+projected = Projector(...) @ fermion
+\end{lstlisting}
+
+%=============================================================================
+\section{源构造}
+%=============================================================================
+
+\texttt{pyquda\_utils/source.py}提供了多种夸克源构造方法：
+
+\begin{lstlisting}[caption={源构造方法}]
+from pyquda_utils.source import (
+    point, wall, volume, momentum, colorvector, source, source12, source3
+)
+
+# 点源
+src = point(latt_info, position=[0, 0, 0, 0])
+
+# 墙源（时间片0上的所有空间点）
+src = wall([24, 24, 24, 72], latt_info, t=0)
+
+# 动量源（带Fourier相位）
+src = momentum(latt_info, mom=[0, 0, 1, 0])
+
+# 体积源
+src = volume([24, 24, 24, 72], latt_info)
+
+# 颜色矢量源
+src = colorvector(latt_info, color=0, spin=0)
+
+# 一般源（12分量: 自旋*颜色）
+src = source12(latt_info)  # 无涂抹
+src = source12(latt_info, source_type="gaussian")  # 高斯涂抹
+\end{lstlisting}
+
+\subsection{高斯/Wuppertal涂抹}
+
+\begin{lstlisting}[caption={高斯涂抹}]
+# 高斯涂抹源
+from pyquda.dirac.gauge import GaugeDirac
+gd = GaugeDirac(latt_info)
+gd.gaussianSmearSource(source, gauge, n_steps=50, sigma=4.0)
+\end{lstlisting}
+
+%=============================================================================
+\section{插件系统}
+%=============================================================================
+
+PyQUDA提供了一个自动化的C/CUDA插件系统，从C头文件自动生成Cython封装。
+
+\subsection{内置插件}
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{pycontract}：GPU加速的介子/重子收缩函数
+    \item \textbf{pygwu}：Grid-Wilson-Overlap接口
+\end{itemize}
+
+\subsection{pycontract — 夸克收缩}
+
+\begin{lstlisting}[caption={pycontract 收缩函数}]
+from pyquda_plugins.pycontract import (
+    mesonTwoPoint, mesonAllSinkTwoPoint,
+    baryonTwoPoint, baryonDiquark,
+    baryonSequentialTwoPoint,
+)
+
+# 介子两点函数
+C2pt = mesonTwoPoint(prop, prop, gamma_list)
+
+# 重子两点函数
+C2pt_baryon = baryonTwoPoint(prop, prop, gamma_list)
+\end{lstlisting}
+
+\subsection{pygwu — Overlap费米子}
+
+\begin{lstlisting}[caption={pygwu Overlap接口}]
+from pyquda_plugins.pygwu import Overlap
+
+ov = Overlap(latt_info, gauge, mass=-0.2770, kappa=0.15)
+ov.buildWilsonKernel()
+ov.invert(source, mass=0.01, tol=1e-12)
+\end{lstlisting}
+
+%=============================================================================
+\section{示例演示}
+%=============================================================================
+
+\subsection{示例1：淬火HMC}
+
+\texttt{examples/1\_Quenched\_HMC.py} — 纯规范场HMC模拟，在$16^3\times32$格点上，$\beta=6.20$，使用Wilson规范作用量和O2Nf1Ng0V积分器。
+
+\begin{lstlisting}[caption={运行淬火HMC}]
+cd PyQUDA/examples
+python 1_Quenched_HMC.py
+# 输出: 每5条轨迹保存NPY格式规范组态到 ./cfg/
+\end{lstlisting}
+
+\subsection{示例2：夸克传播子与π介子两点函数}
+
+\texttt{examples/2\_Quark\_Propagator.py} — 读取Chroma规范组态，施加Stout涂抹，使用多重网格Clover-Wilson Dirac求解器，从墙源传播子计算π介子两点函数。
+
+\subsection{示例3：π介子和质子两点函数}
+
+\texttt{examples/3\_Pion\_Proton\_2pt.py} — 在示例2的基础上增加质子两点函数的计算，使用标准的颜色收缩重子算符和宇称投影。
+
+\subsection{示例4：PCAC验证}
+
+\texttt{examples/4\_Pion\_PCAC.py} — 通过计算π介子轴矢量关联函数验证PCAC关系。
+
+\subsection{示例5：π介子色散关系}
+
+\texttt{examples/5\_Pion\_Dispersion.py} — 使用动量投影计算不同动量下的π介子能量，验证连续色散关系$E^2 = m_\pi^2 + p^2$。
+
+%=============================================================================
+\section{QUDA底层API}
+%=============================================================================
+
+\subsection{参数结构体}
+
+PyQUDA暴露了QUDA的所有主要参数结构体：
+
+\begin{lstlisting}[caption={QUDA参数结构体}]
+# 规范场参数
+from pyquda import QudaGaugeParam
+gauge_param = QudaGaugeParam()
+gauge_param.cpu_prec = 2          # 双精度
+gauge_param.cuda_prec = 2         # 双精度
+gauge_param.reconstruct = 18      # 无重构
+gauge_param.t_boundary = -1       # 反周期时间边界
+
+# 反演参数
+from pyquda import QudaInvertParam
+invert_param = QudaInvertParam()
+invert_param.tol = 1e-12          # 收敛精度
+invert_param.maxiter = 10000      # 最大迭代次数
+invert_param.solve_type = 2       # 直接求解 (Direct)
+invert_param.solution_type = 1    # 无预处理 (Mat)
+invert_param.dslash_type = 1      # Wilson dslash
+invert_param.residual_type = 2    # L2相对残差
+
+# 本征求解器参数
+from pyquda import QudaEigParam
+
+# 多重网格参数
+from pyquda import QudaMultigridParam
+\end{lstlisting}
+
+\subsection{主要QUDA函数}
+
+\begin{lstlisting}[caption={直接调用的QUDA函数}]
+from pyquda import (
+    # 初始化
+    initQuda, endQuda, initCommsGridQuda,
+
+    # 规范场
+    loadGaugeQuda, saveGaugeQuda, freeGaugeQuda,
+    loadCloverQuda, freeCloverQuda,
+    gaussGaugeQuda, gaussMomQuda,
+    projectSU3Quda,
+    computeGaugeForceQuda,
+    updateGaugeFieldQuda,
+
+    # 观测量
+    plaqQuda, polyakovLoopQuda, gaugeObservablesQuda,
+
+    # 求解器
+    invertQuda, invertMultiSrcQuda, invertMultiShiftQuda,
+    dslashQuda, dslashMultiSrcQuda,
+    MatQuda, MatDagMatQuda,
+    cloverQuda,
+
+    # 多重网格 / 本征求解
+    newMultigridQuda, destroyMultigridQuda, updateMultigridQuda,
+    eigensolveQuda, newDeflationQuda, destroyDeflationQuda,
+
+    # 涂抹 / 流
+    performGaugeSmearQuda, performWFlowQuda,
+    performWuppertalnStep, performTwoLinkGaussianSmearNStep,
+
+    # 力计算
+    computeCloverForceQuda, computeHISQForceQuda,
+
+    # 规范固定
+    computeGaugeFixingOVRQuda, computeGaugeFixingFFTQuda,
+
+    # 其他
+    momActionQuda, computeKSLinkQuda,
+    contractQuda, blasGEMMQuda,
+    flushChronoQuda, setVerbosityQuda,
+)
+\end{lstlisting}
+
+%=============================================================================
+\section{高级功能}
+%=============================================================================
+
+\subsection{动量相位}
+
+\begin{lstlisting}[caption={动量相位}]
+from pyquda_utils.phase import MomentumPhase, GridPhase
+
+# 动量投影相位
+phase = MomentumPhase([24, 24, 24, 72], latt_info, mom=[0, 0, 1, 0])
+prop_p = phase @ prop  # 动量投影传播子
+
+# 格点步幅相位
+grid_phase = GridPhase(latt_info, step=[2, 2, 2, 1])
+\end{lstlisting}
+
+\subsection{Wilson圈计算}
+
+\begin{lstlisting}[caption={Wilson圈}]
+from pyquda_utils.wilson_loop import wilson_loop
+
+W = wilson_loop(gauge, R=3, T=4, dirs=["X", "Y", "Z"])
+\end{lstlisting}
+
+\subsection{规范场转换}
+
+\begin{lstlisting}[caption={规范场格式转换}]
+from pyquda_utils.convert import gauge_convert
+
+# SU(3)规范场转换为SU(2)子群
+gauge_su2 = gauge_convert(gauge, "su3_to_su2")
+\end{lstlisting}
+
+\subsection{FFT工具}
+
+\begin{lstlisting}[caption={FFT操作}]
+from pyquda_utils.fft import fft, ifft
+
+# 格点场的快速傅里叶变换
+freq = fft(fermion_field)
+\end{lstlisting}
+
+%=============================================================================
+\section{API接口清单}
+%=============================================================================
+
+\subsection{初始化模块（pyquda/\_\_init\_\_.py）}
+
+\begin{lstlisting}[caption={初始化函数}]
+def init(
+    resource_path: str,
+    grid_type: str = "default",
+    device: int = 0,
+    enable_quda: bool = True,
+    **grid_kwargs,
+) -> None: ...
+
+def initGrid(grid_size: list[int], grid_type: str = "default"): ...
+def initDevice(device: int): ...
+def initQUDA(): ...
+def isQUDAInitialized() -> bool: ...
+def end(): ...
+\end{lstlisting}
+
+\subsection{场模块（pyquda\_comm/field.py）}
+
+\begin{lstlisting}[caption={场基类}]
+class LatticeInfo:
+    def __init__(self, dims, grid_size=None, t_boundary=-1, anisotropy=1.0): ...
+    # 属性: Gs, Gt, volume, grid_size, dims
+
+class LatticeGauge(BaseField):
+    def loadNPYGauge(self, path): ...
+    def saveNPYGauge(self, path): ...
+    def loadHDF5Gauge(self, path): ...
+    def saveHDF5Gauge(self, path): ...
+    def smearAPE(self, coeff, steps): ...
+    def smearStout(self, coeff, steps): ...
+    def smearHYP(self, coeff, steps): ...
+    def wflow(self, steps, step_size): ...
+    def symanzikFlow(self, steps, step_size): ...
+    def gaugeFixingOVR(self, tolerance): ...
+    def gaugeFixingFFT(self): ...
+    def plaquette(self) -> float: ...
+    def polyakov(self) -> float: ...
+    def topologicalCharge(self) -> float: ...
+    def energy(self) -> float: ...
+    @property
+    def gauge_dirac(self) -> GaugeDirac: ...
+
+class LatticeFermion(BaseField): ...
+class LatticePropagator(BaseField): ...
+class LatticeMom(BaseField): ...
+class LatticeClover(BaseField): ...
+class LatticeRotation(BaseField): ...
+\end{lstlisting}
+
+\subsection{Dirac算子模块（pyquda/dirac/）}
+
+\begin{lstlisting}[caption={Dirac算子接口}]
+class Dirac:
+    def __init__(self, latt_info, gauge_param=None, invert_param=None): ...
+
+class FermionDirac(Dirac):
+    def invert(self, source, mass=None, tol=1e-12, maxiter=10000): ...
+    def invertRestart(self, source, mass=None): ...
+    def invertPC(self, source, mass=None): ...
+    def invertCloverPC(self, source, mass=None): ...
+    def invertMultiSrc(self, sources, mass=None): ...
+    def invertMultiSrcRestart(self, sources, mass=None): ...
+    def mat(self, vector): ...
+    def matDagMat(self, vector): ...
+    def dslash(self, vector): ...
+    def performance(self): ...
+
+class WilsonDirac(FermionDirac): ...
+class CloverWilsonDirac(FermionDirac): ...
+class StaggeredDirac(StaggeredFermionDirac): ...
+class HISQDirac(StaggeredFermionDirac): ...
+
+class GaugeDirac(Dirac):
+    def covDev(self, field, dir, displacement): ...
+    def laplacian(self, field): ...
+    def smearWuppertal(self, source, n_steps, sigma): ...
+    def smearGaussian(self, source, n_steps, sigma): ...
+    def projectSU3(self, gauge): ...
+    def gaugePath(self, path): ...
+    def gaugeLoopTrace(self, path): ...
+    def wflow_scale_determination(self, gauge, steps, step_size): ...
+\end{lstlisting}
+
+\subsection{作用量模块（pyquda/action/）}
+
+\begin{lstlisting}[caption={作用量接口}]
+class Action:
+    def action(self) -> float: ...
+    def force(self) -> float: ...
+
+class GaugeAction(Action):
+    def __init__(self, latt_info, loop_param: LoopParam, beta: float): ...
+
+class FermionAction(Action):
+    def __init__(self, latt_info, gauge, mass, n_flavor, ...): ...
+    def sample(self): ...
+    def invertMultiShift(self, source, masses): ...
+
+class CloverWilsonAction(FermionAction):
+    def __init__(self, latt_info, gauge, mass, clover_coeff, n_flavor): ...
+
+class HISQAction(StaggeredFermionAction):
+    def __init__(self, latt_info, gauge, mass, n_flavor): ...
+
+class LoopParam:
+    def __init__(self, paths: list[list[int]], coeffs: list[float]): ...
+\end{lstlisting}
+
+\subsection{HMC模块（pyquda/hmc.py）}
+
+\begin{lstlisting}[caption={HMC接口}]
+class HMC:
+    def __init__(self, latt_info, monomials: list[Action], integrator: Integrator): ...
+    def initialize(self, seed: int, gauge: LatticeGauge): ...
+    def gaussMom(self): ...
+    def samplePhi(self): ...
+    def integrate(self, t: float, tol: float): ...
+    def accept(self, dE: float) -> bool: ...
+    def gaugeAction(self) -> float: ...
+    def fermionAction(self) -> float: ...
+    def momAction(self) -> float: ...
+    def plaquette(self) -> float: ...
+    def polyakovLoop(self) -> float: ...
+    def energy(self) -> float: ...
+    def qcharge(self) -> float: ...
+    def qchargeDensity(self) -> float: ...
+    def saveGauge(self, gauge: LatticeGauge): ...
+    def loadGauge(self, gauge: LatticeGauge): ...
+
+class Integrator:
+    def __init__(self, n_steps: int): ...
+    def integrate(self, updateGauge, updateMom, t: float): ...
+\end{lstlisting}
+
+\subsection{Gamma矩阵模块（pyquda/gamma.py）}
+
+\begin{lstlisting}[caption={Gamma矩阵接口}]
+class Gamma:
+    def __init__(self, index: int, factor=1.0): ...
+    # index: 0-15 (DeGrand-Rossi基)
+    # 支持: +, -, *, @, .T (转置), .H (厄米共轭), .D (dagger)
+    @property
+    def matrix(self): ...       # 4x4 numpy数组
+    @property
+    def sparse_indices(self): ...
+    @property
+    def sparse_data(self): ...
+
+class Projector:
+    def __init__(self, factors: list[float]): ...  # 长度16
+    # 支持: +, -, *, @, .T, .H
+\end{lstlisting}
+
+\subsection{源构造模块（pyquda\_utils/source.py）}
+
+\begin{lstlisting}[caption={源构造接口}]
+def point(latt_info, position): ...         # 点源
+def wall(dims, latt_info, t=0): ...         # 墙源
+def volume(dims, latt_info): ...            # 体积源
+def momentum(latt_info, mom): ...           # 动量源
+def colorvector(latt_info, color, spin): ... # 颜色矢量源
+def source(latt_info): ...                  # 一般源
+def source12(latt_info, source_type=None): ... # 12分量源（自旋+颜色）
+def source3(latt_info, source_type=None): ...  # 3分量源（交错费米子）
+\end{lstlisting}
+
+\subsection{I/O模块（pyquda\_io/）}
+
+\begin{lstlisting}[caption={I/O接口}]
+# chroma.py
+def readChromaGauge(path: str, latt_info) -> LatticeGauge: ...
+def readChromaPropagator(path: str, latt_info) -> LatticePropagator: ...
+
+# milc.py
+def readMILCGauge(path: str, latt_info) -> LatticeGauge: ...
+def writeMILCGauge(path: str, gauge): ...
+def readMILCPropagator(path: str, latt_info) -> LatticePropagator: ...
+
+# npy.py
+def readNPYGauge(path: str, latt_info) -> LatticeGauge: ...
+def writeNPYGauge(path: str, gauge): ...
+
+# kyu.py, xqcd.py, nersc.py, openqcd.py, ildg.py
+# 类似的 read/write 接口
+
+# general.py
+def readGeneralGauge(path: str, latt_info) -> LatticeGauge: ...
+def writeGeneralGauge(path: str, gauge): ...
+\end{lstlisting}
+
+\subsection{工具模块（pyquda\_utils/core.py）}
+
+\begin{lstlisting}[caption={core.py 便捷函数}]
+def init(resource_path=".cache/quda", grid_type="default", device=0): ...
+def invert(dirac, source, mass=None, tol=1e-12, maxiter=10000): ...
+def getDirac(latt_info, gauge, clover_coeff=None, mass=-0.2770): ...
+def getWilson(latt_info, gauge, mass=-0.2770): ...
+def getClover(latt_info, gauge, mass=-0.2770, clover_coeff=1.0, multigrid=True): ...
+def getHISQ(latt_info, gauge, mass=0.05): ...
+def getStaggeredDirac(latt_info, gauge, mass=0.05): ...
+def gatherLattice(field) -> np.ndarray: ...   # MPI收集+归约
+\end{lstlisting}
+
+\subsection{插件模块（pyquda\_plugins/）}
+
+\begin{lstlisting}[caption={插件接口}]
+# pycontract
+def mesonTwoPoint(prop1, prop2, gamma_list): ...
+def mesonAllSinkTwoPoint(prop1, prop2, gamma_list): ...
+def baryonTwoPoint(prop1, prop2, gamma_list): ...
+def baryonDiquark(prop1, prop2, gamma_list): ...
+def baryonSequentialTwoPoint(prop1, prop2, seq_prop, gamma_list): ...
+
+# pygwu
+class Overlap:
+    def __init__(self, latt_info, gauge, mass, kappa): ...
+    def buildWilsonKernel(self): ...
+    def invert(self, source, mass, tol=1e-12): ...
+\end{lstlisting}
+
+%=============================================================================
+\section{性能基准测试}
+%=============================================================================
+
+PyQUDA的基准测试说明参见项目Wiki：
+\url{https://github.com/CLQCD/PyQUDA/wiki/Benchmark}
+
+QUDA环境变量（30+）可用于精细调节GPU性能：
+\begin{itemize}[leftmargin=*]
+    \item \texttt{QUDA\_RESOURCE\_PATH}：QUDA资源缓存路径
+    \item \texttt{QUDA\_ENABLE\_P2P}：启用GPU对等通信
+    \item \texttt{QUDA\_ENABLE\_GDR}：启用GPU直连RDMA
+    \item \texttt{QUDA\_MPI\_REDUCE\_LOCAL\_COPY}：MPI归约的本地拷贝优化
+\end{itemize}
+
+%=============================================================================
+\section{维护说明}
+%=============================================================================
+
+\begin{itemize}[leftmargin=*]
+    \item 函数定义（主要在\texttt{quda.in.pxd}和\texttt{quda.in.pyx}中）及大部分文档字符串（主要在\texttt{pyquda.pyi}和\texttt{enum\_quda.in.py}中）需要手动更新，因为目前无法自动生成
+    \item PyQUDA应与QUDA未来的API兼容版本配合良好，前提是QUDA的API保持不变
+    \item 核心Cython绑定（\texttt{quda.pyx}）从QUDA的C头文件使用pycparser自动生成，插件系统也采用同样的机制
+\end{itemize}
+
+\subsection{更新QUDA API}
+
+当QUDA更新时，需要手动同步以下文件：
+\begin{itemize}[leftmargin=*]
+    \item \texttt{pyquda/quda.pyi}：Python类型存根
+    \item \texttt{pyquda/quda.in.pxd}：Cython声明
+    \item \texttt{pyquda/quda.in.pyx}：Cython实现
+    \item \texttt{pyquda/enum\_quda.in.py}：枚举类型
+\end{itemize}
+
+\end{document}

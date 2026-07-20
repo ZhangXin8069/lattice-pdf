@@ -1,0 +1,1031 @@
+\documentclass[12pt,a4paper]{ctexart}
+
+% === 页面设置 ===
+\usepackage[top=2.5cm,bottom=2.5cm,left=2.5cm,right=2.5cm]{geometry}
+
+% === 数学和物理 ===
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{physics}
+
+% === 图形和表格 ===
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{subcaption}
+
+% === 代码 ===
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{upquote}
+
+\definecolor{codebg}{rgb}{0.95,0.95,0.95}
+\definecolor{codeframe}{rgb}{0.7,0.7,0.7}
+\definecolor{commentcolor}{rgb}{0.3,0.5,0.3}
+\definecolor{stringcolor}{rgb}{0.7,0.3,0.1}
+\definecolor{keywordcolor}{rgb}{0.2,0.2,0.7}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    backgroundcolor=\color{codebg},
+    frame=single,
+    rulecolor=\color{codeframe},
+    breaklines=true,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    xleftmargin=2em,
+    framexleftmargin=1.5em,
+    commentstyle=\color{commentcolor},
+    stringstyle=\color{stringcolor},
+    keywordstyle=\color{keywordcolor}\bfseries,
+    showstringspaces=false,
+    tabsize=4,
+    captionpos=b,
+}
+
+% === 引用 ===
+\usepackage{hyperref}
+\usepackage[numbers,sort&compress]{natbib}
+
+% === 其他 ===
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{multirow}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue,
+}
+
+% === 标题信息 ===
+\title{\heiti lamet-agent \\[3pt] \large LaMET/LQCD分析智能体框架使用手册}
+\author{张鑫}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent
+lamet-agent是一个基于Python的大动量有效理论（LaMET）格点QCD分析智能体框架。它通过Manifest（清单文件）定义全局数据源和分阶段作业列表，利用LLM驱动的智能体自动执行从关联函数分析到最终物理分布函数的完整五阶段分析工作流，并以NetCDF格式输出中间数据制品。本手册详细介绍lamet-agent的架构设计、安装配置、Manifest系统、五阶段工作流、命令行接口、数据格式约定、后端配置以及核心API接口。
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%=============================================================================
+\section{项目概述}
+%=============================================================================
+
+lamet-agent是一个"Python-first"的LaMET/LQCD分析智能体框架。其核心思想是通过一个Manifest文件定义全局数据源池和分阶段作业列表，作业ID形成有向无环图（DAG）：关联函数作业聚合原始数据集，后续作业通过角色命名的输入（如\texttt{target}、\texttt{denominator}）消费上游作业ID。
+
+\subsection{主要特性}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{五阶段分析工作流}：关联函数分析 $\to$ 重整化 $\to$ 傅里叶变换 $\to$ 微扰匹配 $\to$ 外推
+    \item \textbf{LLM驱动}：支持多种LLM后端（OpenAI API、DeepSeek、Codex、Mock），智能体自主执行各阶段分析
+    \item \textbf{NetCDF中间数据}：阶段间通过自描述的NetCDF文件传递数据，支持bootstrap/jackknife重采样
+    \item \textbf{Manifest系统}：声明式JSON/JSONC清单文件定义完整的分析流水线
+    \item \textbf{参数合约}：严格的阶段参数校验，拒绝未知键和类型错误
+    \item \textbf{混合自重整化}：支持ratio方案、hybrid-ratio方案和混合自重整化方案
+    \item \textbf{规划模式}：\texttt{lamet-agent plan}命令通过LLM交互式地生成和修复Manifest
+\end{itemize}
+
+\subsection{五阶段工作流}
+\begin{figure}[H]
+\centering
+\fbox{\parbox{0.9\textwidth}{\centering
+\vspace{0.5cm}
+\textbf{Stage 1}: correlator\_analysis \\
+\hspace{1em}关联函数拟合 $\to$ 裸矩阵元提取 $\to$ NetCDF输出 \\[5pt]
+\textbf{Stage 2}: renormalization \\
+\hspace{1em}Ratio / Hybrid-Ratio / Hybrid Self-Renormalization \\[5pt]
+\textbf{Stage 3}: fourier\_transform \\
+\hspace{1em}坐标空间 $\to$ 动量空间傅里叶变换 \\[5pt]
+\textbf{Stage 4}: perturbative\_matching \\
+\hspace{1em}准PDF $\to$ 光锥PDF微扰匹配 \\[5pt]
+\textbf{Stage 5}: extrapolation \\
+\hspace{1em}连续极限/无穷动量外推
+\vspace{0.5cm}}}
+\caption{lamet-agent 五阶段分析工作流}
+\label{fig:workflow}
+\end{figure}
+
+%=============================================================================
+\section{项目结构}
+%=============================================================================
+
+\begin{lstlisting}[caption={lamet-agent 项目目录结构}, label={lst:structure}]
+.
+├── pyproject.toml                 # 项目元数据和依赖声明
+├── README.md                      # 完整项目文档
+├── examples/                      # 示例和参考数据
+│   ├── fake_data/                 # 模拟关联函数数据生成器
+│   ├── sample_manifest.jsonc      # 带注释的参考Manifest
+│   ├── pion_pdf_cg_manifest.json  # π介子PDF CG规范工作流
+│   ├── pion_pdf_gi_manifest.json  # π介子PDF GI规范工作流
+│   ├── pion_da_gi_manifest.json   # π介子DA GI规范工作流
+│   └── kaon_da_gi_manifest.json   # K介子DA GI规范工作流
+├── src/lamet_agent/               # 源代码
+│   ├── __init__.py                # 包初始化
+│   ├── agent.py                   # run_agent() — 主循环
+│   ├── cli.py                     # CLI入口（validate/run/plan）
+│   ├── kernels.py                 # 内置匹配核函数
+│   ├── manifest.py                # Manifest模式定义和验证
+│   ├── manifest_params.py         # 参数合约注册表
+│   ├── core/                      # 核心模块
+│   │   ├── llm.py                 # 可插拔LLM会话后端
+│   │   ├── prompting.py           # 提示词构建
+│   │   ├── tools.py               # 工具注册和参数准备
+│   │   ├── trace.py               # ReAct风格追踪
+│   │   ├── data.py                # 类型化数据容器（EnsembleInfo/EnsembleData）
+│   │   ├── stages.py              # 阶段ID到包的映射
+│   │   ├── reporting.py           # 阶段报告生成
+│   │   ├── resampling.py          # 重采样（jackknife/bootstrap）
+│   │   ├── plotting.py            # 出版级绑图
+│   │   └── banner.py              # 启动横幅
+│   ├── planning/                  # 交互式规划模块
+│   └── stages/                    # 阶段实现
+│       ├── correlator/            # Stage 1: 关联函数分析
+│       ├── renorm/                # Stage 2: 重整化
+│       ├── fourier/               # Stage 3: 傅里叶变换
+│       ├── matching/              # Stage 4: 微扰匹配
+│       ├── extrapolation/         # Stage 5: 外推
+│       └── review/                # 跨阶段一致性审查
+└── tests/unit/                    # 单元测试
+\end{lstlisting}
+
+%=============================================================================
+\section{安装}
+%=============================================================================
+
+\subsection{环境要求}
+
+\begin{table}[H]
+\centering
+\caption{运行环境要求}
+\label{tab:requirements}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{组件} & \textbf{要求} \\
+\midrule
+Python & $\ge$ 3.10 \\
+核心依赖 & numpy ($\ge$ 2.0), pydantic ($\ge$ 2.8), typer ($\ge$ 0.12), tqdm ($\ge$ 4.68) \\
+分析依赖 (analysis) & gvar ($\ge$ 12.1), lsqfit ($\ge$ 13.0), scipy ($\ge$ 1.13), h5py ($\ge$ 3.11), \\
+ & matplotlib ($\ge$ 3.8), xarray ($\ge$ 2024.1), netCDF4 ($\ge$ 1.7) \\
+开发依赖 (dev) & pytest ($\ge$ 8.0) \\
+Codex依赖 (codex) & openai-codex ($\ge$ 0.1.0b3) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{安装步骤}
+
+\begin{lstlisting}[caption={lamet-agent 安装流程}]
+# 1. 克隆仓库
+git clone https://github.com/Greyyy-HJC/lamet-agent.git
+cd lamet-agent
+
+# 2. 创建虚拟环境
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 3. 安装（含分析和开发依赖）
+pip install -e ".[dev,analysis]"
+
+# 4. 验证安装
+lamet-agent --help
+\end{lstlisting}
+
+\subsection{可选依赖安装}
+
+\begin{lstlisting}[caption={按需安装可选依赖}]
+# 仅核心安装
+pip install -e .
+
+# 含分析依赖（NetCDF, gvar, lsqfit, matplotlib）
+pip install -e ".[analysis]"
+
+# 含Codex后端支持
+pip install -e ".[codex]"
+
+# 完整安装
+pip install -e ".[dev,analysis,codex]"
+\end{lstlisting}
+
+%=============================================================================
+\section{命令行接口}
+%=============================================================================
+
+\subsection{CLI概览}
+
+lamet-agent通过\texttt{lamet-agent}命令提供三个子命令：
+
+\begin{lstlisting}[caption={CLI命令概览}]
+# 验证Manifest文件
+lamet-agent validate <manifest.json>
+
+# 交互式规划（通过LLM修复和完善Manifest）
+lamet-agent plan <manifest.json> --backend api --model deepseek/deepseek-chat
+
+# 运行分析工作流
+lamet-agent run <manifest.json> --backend api --model deepseek/deepseek-chat
+\end{lstlisting}
+
+\subsection{validate 命令}
+
+验证Manifest文件的模式完整性（ID唯一性、DAG依赖、路径有效性、参数合约和核函数引用）。
+
+\begin{lstlisting}[caption={validate 命令用法}]
+lamet-agent validate examples/pion_pdf_cg_manifest.json
+# 输出: {"run_id": "...", "stages": [...], "correlator_count": ..., "status": "valid"}
+\end{lstlisting}
+
+\subsection{plan 命令}
+
+交互式规划模式，接受不完整的JSON/JSONC Manifest并运行LLM控制的规划循环。
+
+\begin{lstlisting}[caption={plan 命令用法}]
+# 使用API后端
+lamet-agent plan draft.jsonc --backend api --model deepseek/deepseek-chat
+
+# 使用Codex后端
+lamet-agent plan draft.jsonc --backend codex --model CODEX_MODEL_ID
+\end{lstlisting}
+
+规划循环执行以下操作：检查Manifest、审查HDF5输入、提出终端问题、应用JSON Patch编辑，并在接受时写入quick和full两个版本的Manifest文件。
+
+\subsection{run 命令}
+
+运行阶段化的智能体循环，执行Manifest中定义的所有阶段。
+
+\begin{lstlisting}[caption={run 命令完整参数}]
+lamet-agent run <manifest.json> \
+    --backend api \                    # LLM后端: mock|external|api|codex
+    --model deepseek/deepseek-chat \   # 模型ID (provider/model_id)
+    --verbose \                        # 打印每个LLM周期
+    --max-tool-steps 40 \              # 每个阶段最大LLM/工具周期数
+    --report_language en \             # 报告语言: en|ch
+    --api-key-file api.key \           # API密钥文件
+    --base-url https://api.example.com # 自定义API端点
+\end{lstlisting}
+
+\subsection{后端模式}
+
+\begin{table}[H]
+\centering
+\caption{LLM后端模式说明}
+\label{tab:backends}
+\begin{tabular}{@{}llp{6cm}@{}}
+\toprule
+\textbf{后端} & \textbf{说明} & \textbf{参数} \\
+\midrule
+\texttt{mock} & 确定性测试支架，不使用真实LLM & -- \\
+\texttt{external} & JSONL转录回放（测试和回归） & \texttt{--actions-path} \\
+\texttt{api} & OpenAI兼容HTTP API & \texttt{--model provider/model\_id}, \texttt{--api-key-file}, \texttt{--base-url} \\
+\texttt{codex} & Codex Python SDK & \texttt{--model MODEL\_ID} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%=============================================================================
+\section{Manifest系统}
+%=============================================================================
+
+\subsection{Manifest概述}
+
+Manifest是声明式JSON/JSONC文件，定义完整的分析流水线。它由三个顶级块组成：
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{metadata}：运行级设置（run\_id、root\_directory、artifacts\_directory、target\_observable、resample\_mode、random\_seed、workers、stages列表）
+    \item \textbf{inputs}：数据源定义（correlators、artifacts、kernels）
+    \item \textbf{stages}：阶段默认参数和作业列表
+\end{enumerate}
+
+\subsection{metadata 字段}
+
+\begin{table}[H]
+\centering
+\caption{metadata 字段说明}
+\label{tab:metadata}
+\begin{tabular}{@{}llp{6cm}@{}}
+\toprule
+\textbf{字段} & \textbf{必需} & \textbf{说明} \\
+\midrule
+\texttt{run\_id} & 是 & 运行标识符 \\
+\texttt{root\_directory} & 是 & 根目录，相对路径基于此解析 \\
+\texttt{artifacts\_directory} & 是 & 中间数据制品输出目录 \\
+\texttt{target\_observable} & 是 & 目标可观测量：\texttt{"pdf"}、\texttt{"da"}或\texttt{"gpd"} \\
+\texttt{resample\_mode} & 是 & 重采样模式：\texttt{"jk"}（jackknife）或\texttt{"bs"}（bootstrap） \\
+\texttt{random\_seed} & 是 & 随机种子（用于所有重采样步骤） \\
+\texttt{bs\_samples} & 条件 & bootstrap样本数（resample\_mode="bs"时必需） \\
+\texttt{sample\_error\_mode} & 否 & 误差模式：\texttt{"covariance"}（默认）、\texttt{"mean"}或\texttt{"median"} \\
+\texttt{bin\_size} & 否 & 重采样前的配置装箱大小 \\
+\texttt{workers} & 否 & 样本拟合工作进程数（默认1） \\
+\texttt{stages} & 是 & 有序的阶段ID列表 \\
+\texttt{parton} & 条件 & 部分子类型：\texttt{"gluon"}或\texttt{"quark"} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{inputs 字段}
+
+\begin{lstlisting}[caption={inputs 结构示例}]
+{
+  "inputs": {
+    "correlators": [
+      {
+        "correlator_id": "ensemble_2pt",
+        "correlator_type": "2pt",
+        "data_path": "data/ensemble_2pt.h5",
+        "ensemble": "HISQa060_X",
+        "hadron": "pion",
+        "gfix": "CG",
+        "source_operator": "g5",
+        "sink_operator": "g5",
+        "volume": "S48T64",
+        "lattice_spacing_fm": 0.0574,
+        "momentum": ["PX0PY0PZ0", "PX5PY0PZ0"]
+      },
+      {
+        "correlator_id": "ensemble_3pt",
+        "correlator_type": "3pt",
+        "data_path": "data/ensemble_free_3pt.h5",
+        "ensemble": "HISQa060_X",
+        "hadron": "pion",
+        "gfix": "CG",
+        "source_operator": "g5",
+        "sink_operator": "g5",
+        "current_operator": "gT_nonlocal",
+        "bz_direction": "X",
+        "volume": "S48T64",
+        "lattice_spacing_fm": 0.0574,
+        "momentum": ["PX0PY0PZ0", "PX5PY0PZ0"],
+        "tsep": [8, 10, 12],
+        "bT": [0],
+        "bz": [0, 1, 2]
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "bare_input",
+        "stage": "correlator_analysis",
+        "path": "artifacts/correlator_analysis/ca_p5.nc",
+        "momentum": "PX0PY0PZ0",
+        "volume": "S48T64",
+        "lattice_spacing_fm": 0.0574
+      }
+    ],
+    "kernels": [
+      {
+        "stage": "renormalization",
+        "kernel_id": "ZMSbar_pdf",
+        "kernel_path": "src/lamet_agent/kernels.py",
+        "scheme": "hybrid_self_renormalization",
+        "kernel_parameters": { "mu": 2.0 }
+      }
+    ]
+  }
+}
+\end{lstlisting}
+
+\subsection{标准HDF5关联函数格式}
+
+关联函数数据以HDF5格式存储，遵循以下路径约定：
+
+\begin{itemize}[leftmargin=*]
+    \item 普通2pt：\texttt{<source\_op>/<sink\_op>/<momentum>}，形状\texttt{(Lt, n\_cfg)}
+    \item qDA 2pt：\texttt{<source>/<sink>/<momentum>/bT<bT>/bz<bz>}，形状\texttt{(Lt, n\_cfg)}
+    \item 3pt：\texttt{<source>/<sink>/<current>/<momentum>/tsep<tsep>/bT<bT>/bz<bz>}，形状\texttt{(tsep+1, n\_cfg)}
+\end{itemize}
+
+动量标签格式为\texttt{PXnPYnPZn}，每个分量均为带符号整数。物理动量由下式导出：
+\begin{equation}
+p\,[\mathrm{GeV}] = \frac{2\pi\hbar c}{L_s\,a\,[\mathrm{fm}]} \sqrt{n_x^2+n_y^2+n_z^2}, \qquad \hbar c = 0.1973269804\ \mathrm{GeV\,fm}.
+\end{equation}
+
+%=============================================================================
+\section{五阶段分析工作流}
+%=============================================================================
+
+\subsection{Stage 1: correlator\_analysis（关联函数分析）}
+
+关联函数分析阶段从原始HDF5数据中提取裸矩阵元。
+
+\textbf{核心工具}：
+\begin{itemize}[leftmargin=*]
+    \item \texttt{inspect\_correlator\_scale}：选择关联函数缩放
+    \item \texttt{tune\_ground\_state}：2pt拟合窗口扫描和模型平均
+    \item \texttt{tune\_bare\_matrix}：扫描裸矩阵元拟合窗口
+    \item \texttt{fit\_bare\_matrix\_grid}：对所有$z$和所有重采样应用统一拟合窗口
+\end{itemize}
+
+\textbf{拟合策略}：
+\begin{itemize}[leftmargin=*]
+    \item \texttt{3pt\_ratio}：通过3pt/2pt比值拟合提取裸矩阵元
+    \item \texttt{FH}：Feynman-Hellmann方法
+    \item \texttt{3pt\_ratio+FH}：组合方法
+    \item \texttt{qda\_ratio}：准分布振幅比值拟合
+\end{itemize}
+
+\textbf{拟合形式}：
+\begin{itemize}[leftmargin=*]
+    \item \texttt{Breit}（默认）：初末态动量大小相等
+    \item \texttt{NonBreit}：允许不同的初末态动量
+\end{itemize}
+
+\textbf{模型平均}：当\texttt{model\_average: true}时，使用logGBF权重组合多个拟合函数候选（不同nstate和prior\_width）。
+
+\subsection{Stage 2: renormalization（重整化）}
+
+支持三种重整化方案：
+
+\subsubsection{Ratio方案}
+
+简单的点对点比值重整化：
+\begin{equation}
+h_s^R(z) = \frac{h_s^{\mathrm{target}}(z)}{h_s^{\mathrm{denominator}}(z)}.
+\end{equation}
+
+\subsubsection{Hybrid-Ratio方案}
+
+混合比值重整化，在短距离使用比值方案，在长距离施加指数修正。需要\texttt{zs\_fm}参数定义切换距离。短距离采用固定分母（如零动量），长距离采用指数修正。
+
+\subsubsection{混合自重整化方案}
+
+\texttt{scheme: "hybrid\_self\_renormalization"}通过拟合零动量参考数据并结合短距离$\overline{\mathrm{MS}}$匹配来确定有限重整化：
+
+\begin{equation}
+g(z)-\ln Z_{\overline{\mathrm{MS}}}^{\mathrm{PDF}}(z;\mu)\simeq m_0z+b, \qquad
+z_R(z,a)=\exp[\ln M_{\mathrm{fit}}(z,a)-g(z)+m_0z].
+\end{equation}
+
+重整化矩阵元为：
+\begin{equation}
+H_{\mathrm{ren}}(z) = \frac{H_{\mathrm{bare}}(z)}{z_R(z,a)\,Z_{\overline{\mathrm{MS}}}(z)}.
+\end{equation}
+
+\begin{table}[H]
+\centering
+\caption{混合自重整化参数}
+\label{tab:self_renorm_params}
+\begin{tabular}{@{}llp{6cm}@{}}
+\toprule
+\textbf{参数} & \textbf{位置} & \textbf{说明} \\
+\midrule
+\texttt{scheme\_parameters.LambdaQCD\_gev} & fit/apply job & $\Lambda_{\mathrm{QCD}}$ (GeV)，必需 \\
+\texttt{scheme\_parameters.d} & fit job & 连续/离散化系数（参考算符值），必需 \\
+\texttt{scheme\_parameters.m0\_gev} & apply job & 目标算符$m_0$（可选，用于跨算符） \\
+\texttt{mu} & defaults/job & 重整化标度，默认2.0 GeV \\
+\texttt{scheme\_parameters.svdcut} & fit job & SVD截断，默认$10^{-12}$ \\
+\texttt{scheme\_parameters.z\_coverage\_policy} & apply job & 覆盖策略：\texttt{extrapolate}/\texttt{strict}/\texttt{intersection} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Stage 3: fourier\_transform（傅里叶变换）}
+
+将重整化后的坐标空间矩阵元变换到动量空间，得到准PDF。支持多种傅里叶变换方法和外推方案。
+
+\textbf{核心工具}：
+\begin{itemize}[leftmargin=*]
+    \item \texttt{load\_renormalized\_matrix\_element\_samples}：加载重整化矩阵元
+    \item \texttt{run\_fourier\_transform}：执行傅里叶变换
+    \item \texttt{plot\_fourier\_result}：绑制结果图
+    \item \texttt{plot\_fourier\_extension\_quality\_result}：评估外推质量
+    \item \texttt{report\_fourier\_result}：生成阶段报告
+\end{itemize}
+
+\subsection{Stage 4: perturbative\_matching（微扰匹配）}
+
+通过NLO微扰匹配核将准PDF转换为光锥PDF。
+
+\textbf{核心工具}：
+\begin{itemize}[leftmargin=*]
+    \item \texttt{load\_quasi\_pdf}：加载准PDF数据
+    \item \texttt{build\_matching\_kernel}：构建匹配核（支持ratio和hybrid方案）
+    \item \texttt{apply\_matching}：应用匹配核
+    \item \texttt{plot\_matched\_pdf}：绑制匹配后PDF
+    \item \texttt{report\_matching\_result}：生成匹配报告
+\end{itemize}
+
+\subsection{Stage 5: extrapolation（外推）}
+
+执行连续极限和无穷大动量外推。
+
+\subsection{阶段结束后处理}
+
+每个阶段完成后，\texttt{reporting.py}模块以选定语言（\texttt{en}或\texttt{ch}）生成报告，帮助用户追踪分析进展和审查中间结果。
+
+%=============================================================================
+\section{NetCDF中间数据格式}
+%=============================================================================
+
+\subsection{EnsembleData格式}
+
+阶段间通过\texttt{EnsembleData} NetCDF文件传递数据，路径为\texttt{<artifacts\_directory>/<stage>/<job\_id>.nc}。
+
+\textbf{数据布局}：
+\begin{itemize}[leftmargin=*]
+    \item \textbf{首维}：\texttt{resample}（bootstrap/jackknife样本索引，或gvar的长度1）
+    \item \textbf{物理维度}：如$z$（坐标空间）或$x$（动量空间）
+    \item \textbf{属性}：保留的\texttt{ensemble}和\texttt{resample}元数据，加上阶段特定的attrs
+\end{itemize}
+
+\subsection{典型制品链}
+
+\begin{table}[H]
+\centering
+\caption{阶段制品示例}
+\label{tab:artifacts}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{阶段} & \textbf{制品示例} \\
+\midrule
+\texttt{correlator\_analysis} & \texttt{correlator\_analysis/ca\_p5.nc} \\
+\texttt{renormalization} & \texttt{renormalization/rn\_p5.nc} \\
+\texttt{fourier\_transform} & \texttt{fourier\_results/fourier\_result.nc}, \texttt{fourier\_results/fourier\_fit\_info.nc} \\
+\texttt{perturbative\_matching} & \texttt{matching\_results/quasi\_pdf.nc} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Python读写}
+
+\begin{lstlisting}[caption={NetCDF数据读写}]
+from lamet_agent.core.data import EnsembleData
+
+# 写入
+data.to_netcdf("artifacts/fourier_results/fourier_result.nc")
+
+# 读取
+reload = EnsembleData.from_netcdf("artifacts/fourier_results/fourier_result.nc")
+\end{lstlisting}
+
+复数数组自动往返（\texttt{auto\_complex=True}），无需手动拆分实部和虚部。
+
+\subsection{外部检查}
+
+NetCDF是自描述格式，可使用标准工具检查：
+
+\begin{lstlisting}[caption={使用外部工具检查NetCDF}]
+# 命令行检查
+ncdump -h file.nc
+
+# Python / xarray 读取
+import json, xarray as xr
+from lamet_agent.core.data import EnsembleInfo
+
+da = xr.load_dataarray("fourier_result.nc", auto_complex=True)
+ensemble = EnsembleInfo(**json.loads(da.attrs["ensemble"]))
+values = da.values  # shape (n_sample, *physical_dims)
+\end{lstlisting}
+
+%=============================================================================
+\section{示例演示}
+%=============================================================================
+
+\subsection{示例1：π介子PDF CG规范完整工作流}
+
+\begin{lstlisting}[caption={运行π介子PDF完整工作流}]
+# 验证Manifest
+lamet-agent validate examples/pion_pdf_cg_manifest.json
+
+# 运行完整流水线（使用API后端）
+lamet-agent run examples/pion_pdf_cg_manifest.json \
+    --backend api \
+    --model deepseek/deepseek-chat \
+    --verbose
+
+# 运行（使用Codex后端）
+lamet-agent run examples/pion_pdf_cg_manifest.json \
+    --backend codex \
+    --model CODEX_MODEL_ID \
+    --verbose
+\end{lstlisting}
+
+此工作流通过关联函数分析、hybrid-ratio重整化、傅里叶变换和微扰匹配四个阶段，从P0/P5动量关联函数数据出发，最终得到π介子的胶子PDF。
+
+\subsection{示例2：π介子DA GI规范完整工作流}
+
+\begin{lstlisting}[caption={运行π介子DA工作流}]
+lamet-agent validate examples/pion_da_gi_manifest.json
+lamet-agent run examples/pion_da_gi_manifest.json \
+    --backend api --model deepseek/deepseek-chat --verbose
+\end{lstlisting}
+
+此工作流从qDA关联函数分析开始，经过重整化和匹配，最终得到π介子的分布振幅（DA）。
+
+\subsection{示例3：混合自重整化}
+
+\begin{lstlisting}[caption={混合自重整化Manifest片段}]
+{
+  "stages": {
+    "renormalization": {
+      "defaults": {
+        "normalization": false,
+        "scheme": "hybrid_self_renormalization",
+        "mu": 2.0,
+        "scheme_parameters": { "LambdaQCD_gev": 0.1 }
+      },
+      "jobs": [
+        {
+          "id": "rn_zR_fit",
+          "inputs": { "reference": "bare_pdf_reference" },
+          "params": {
+            "scheme_parameters": { "d": -0.08183 }
+          }
+        },
+        {
+          "id": "rn_da_a06",
+          "inputs": { "target": "bare_da_a06", "zR": "rn_zR_fit" },
+          "params": {
+            "scheme_parameters": { "d": 0.19, "m0_gev": -0.094 }
+          }
+        }
+      ]
+    }
+  }
+}
+\end{lstlisting}
+
+作业角色：
+\begin{itemize}[leftmargin=*]
+    \item \texttt{reference}（fit job）：指向裸零动量\texttt{EnsembleData}
+    \item \texttt{target}（apply job）：指向待重整化的裸矩阵元
+    \item \texttt{zR}（apply job）：指向fit job的NetCDF输出
+\end{itemize}
+
+\subsection{示例4：交互式规划}
+
+\begin{lstlisting}[caption={交互式规划流程}]
+# 从不完整的草稿Manifest开始
+lamet-agent plan draft_manifest.jsonc --backend api --model deepseek/deepseek-chat
+
+# 规划循环会：
+# 1. 检查Manifest完整性
+# 2. 列出缺失参数、不一致设置、建议修改和数据转换
+# 3. 写入quick（快速烟雾测试）和full（完整生产）两个版本
+\end{lstlisting}
+
+%=============================================================================
+\section{代码架构详解}
+%=============================================================================
+
+\subsection{agent.py — run\_agent()}
+
+\texttt{run\_agent()}是主入口函数，执行\texttt{metadata.stages}中定义的阶段列表。对每个阶段作业：
+\begin{enumerate}[leftmargin=*]
+    \item \texttt{validate\_stage\_inputs()}检查缺失的输入
+    \item \texttt{build\_stage\_static\_prompt()}一次性组装静态上下文
+    \item \texttt{make\_llm\_session()}创建可插拔的LLM会话
+    \item 多轮循环（最多\texttt{max\_tool\_steps}，默认40轮）
+    \item 每轮LLM发出一个JSON动作，\texttt{prepare\_tool\_args()}和\texttt{resolve\_stage\_tools()}运行工具
+    \item 终止工具将主数据放入\texttt{store["output"]}
+\end{enumerate}
+
+\subsection{manifest.py — 模式定义}
+
+定义\texttt{AnalysisManifest}的三部分结构：\texttt{metadata}、\texttt{source inputs}和\texttt{stage-job}模式。验证ID唯一性、有序作业引用和根相对路径。
+
+\subsection{core/llm.py — LLM会话后端}
+
+提供四种可插拔的\texttt{LlmSession}后端：
+\begin{itemize}[leftmargin=*]
+    \item \textbf{MockSession}：确定性测试支架
+    \item \textbf{ExternalSession}：JSONL转录回放
+    \item \textbf{CodexSession}：Codex Python SDK
+    \item \textbf{ApiSession}：OpenAI兼容HTTP（支持DeepSeek、OpenAI等提供商）
+\end{itemize}
+
+\texttt{PROVIDERS}字典定义每个提供商的base URL、默认模型和API密钥环境变量。
+
+\subsection{core/tools.py — 工具系统}
+
+\texttt{STAGE\_TOOLS}注册表将阶段ID映射到具体的工具函数。\texttt{prepare\_tool\_args()}注入Manifest路径、强制绑图输出到\texttt{artifacts/}、填充运行时元数据。
+
+关键函数：
+\begin{itemize}[leftmargin=*]
+    \item \texttt{resolve\_stage\_tools(stage)}：返回阶段的工具注册表
+    \item \texttt{resolve\_job\_tools(stage, job, params)}：返回当前作业合约有效的工具子集
+    \item \texttt{prepare\_tool\_args(tool\_name, args, ...)}：准备工具参数
+    \item \texttt{filter\_tool\_kwargs(tool, args)}：过滤LLM提供的无效参数
+    \item \texttt{validate\_stage\_inputs(stage, manifest, job)}：验证阶段输入
+\end{itemize}
+
+\subsection{core/data.py — 数据容器}
+
+\begin{lstlisting}[caption={数据容器接口}]
+class EnsembleInfo:
+    """系综元数据"""
+    id: str            # 系综标识符
+    volume: str        # 格点体积（如"S48T64"）
+    a_fm: float        # 格点间距（fm）
+    # ... 更多字段
+
+class EnsembleData:
+    """重采样后的格点数据"""
+    values: np.ndarray           # shape (n_sample, *physical_dims)
+    physical_dims: tuple[str]    # 物理维度名
+    coords: dict[str, np.ndarray]  # 坐标值
+    ensemble: EnsembleInfo       # 系综信息
+    resample_mode: str           # "jk" 或 "bs"
+    attrs: dict[str, Any]        # 额外属性
+
+    def to_netcdf(self, path: str) -> None: ...
+    @classmethod
+    def from_netcdf(cls, path: str) -> EnsembleData: ...
+\end{lstlisting}
+
+%=============================================================================
+\section{API接口清单}
+%=============================================================================
+
+\subsection{CLI接口}
+
+\begin{lstlisting}[caption={CLI命令签名}]
+# validate
+lamet-agent validate <path: Path>
+
+# plan
+lamet-agent plan <manifest: Path> \
+    --backend <api|codex|mock> \
+    --model <provider/model_id> \
+    [--api-key-file <path>] \
+    [--base-url <url>]
+
+# run
+lamet-agent run <manifest: Path> \
+    --backend <mock|external|api|codex> \
+    [--model <provider/model_id>] \
+    [--actions-path <path>] \         # external 后端
+    [--api-key-file <path>] \         # api 后端
+    [--base-url <url>] \              # api 后端
+    [--verbose | -v] \
+    [--max-tool-steps <int>] \        # 默认 40
+    [--report_language <en|ch>]       # 默认 en
+\end{lstlisting}
+
+\subsection{Agent核心API}
+
+\begin{lstlisting}[caption={agent.py 核心函数}]
+def run_agent(
+    manifest: AnalysisManifest,
+    *,
+    backend: str,
+    actions_path: Path | None = None,
+    provider: str | None = None,
+    model_name: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    verbose: bool = False,
+    max_tool_steps: int = 40,
+    report_language: str = "en",
+) -> dict[str, Any]:
+    """执行完整的阶段化智能体循环。
+    返回: {run_id, status, stages, completed_stages, stage_reports, ...}
+    """
+\end{lstlisting}
+
+\subsection{Manifest API}
+
+\begin{lstlisting}[caption={manifest.py 核心接口}]
+class AnalysisManifest:
+    """完整的分析Manifest"""
+    run_id: str
+    metadata: RunMetadata
+    inputs: AnalysisInputs
+    stages: dict[str, StageSpec]
+
+    @property
+    def root_directory(self) -> Path: ...
+    @property
+    def correlators(self) -> list[CorrelatorInput]: ...
+    @property
+    def kernels(self) -> list[KernelInput]: ...
+
+def validate_manifest_file(path: Path) -> AnalysisManifest: ...
+# 验证并加载Manifest文件，失败时抛出异常
+
+class CorrelatorInput:
+    """关联函数输入定义"""
+    correlator_id: str
+    correlator_type: Literal["2pt", "3pt"]
+    data_path: str
+    ensemble: str
+    hadron: str
+    gfix: str
+    source_operator: str
+    sink_operator: str
+    volume: str
+    lattice_spacing_fm: float
+    momentum: list[str]
+    tsep: list[int] | None       # 3pt only
+    bT: list[int] | None         # 3pt only
+    bz: list[int] | None         # 3pt only
+    bz_direction: str | None     # 3pt only
+    current_operator: str | None # 3pt only
+
+class StageJob:
+    """阶段作业定义"""
+    id: str
+    inputs: dict[str, str]       # 角色 -> 上游作业ID
+    params: dict[str, Any]       # 作业级参数（合并defaults后）
+\end{lstlisting}
+
+\subsection{数据API}
+
+\begin{lstlisting}[caption={core/data.py 核心接口}]
+class EnsembleData:
+    """重采样格点数据容器"""
+    values: np.ndarray
+    ensemble: EnsembleInfo
+    resample_mode: str
+    attrs: dict[str, Any]
+
+    def to_netcdf(self, path: str | Path) -> None: ...
+    @classmethod
+    def from_netcdf(cls, path: str | Path) -> EnsembleData: ...
+
+class EnsembleInfo:
+    """系综元数据"""
+    id: str
+    volume: str
+    a_fm: float
+    # 支持序列化和反序列化
+    def to_dict(self) -> dict[str, Any]: ...
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> EnsembleInfo: ...
+\end{lstlisting}
+
+\subsection{LLM API}
+
+\begin{lstlisting}[caption={core/llm.py 核心接口}]
+def parse_api_model(model_spec: str) -> tuple[str, str]:
+    """解析 'provider/model_id' 格式的模型规格。
+    返回: (provider, model_id)
+    """
+
+def provider_config(provider: str) -> dict[str, str] | None:
+    """获取提供商配置。
+    返回: {base_url, default_model, key_env}
+    """
+
+class LlmSession(ABC):
+    """LLM会话抽象基类"""
+    @abstractmethod
+    def send(self, messages: list[dict], tools: list[dict]) -> dict: ...
+    @abstractmethod
+    def close(self) -> None: ...
+
+class ApiSession(LlmSession):
+    """OpenAI兼容API会话"""
+    def __init__(self, provider: str, model: str, api_key: str, base_url: str | None): ...
+
+class MockSession(LlmSession):
+    """Mock会话（测试用）"""
+    def __init__(self, actions: list[dict]): ...
+
+class ExternalSession(LlmSession):
+    """外部JSONL转录回放"""
+    def __init__(self, actions_path: Path): ...
+
+class CodexSession(LlmSession):
+    """Codex SDK会话"""
+    def __init__(self, model: str | None = None): ...
+\end{lstlisting}
+
+\subsection{工具系统API}
+
+\begin{lstlisting}[caption={core/tools.py 核心接口}]
+def resolve_stage_tools(stage: str) -> dict[str, Callable]:
+    """返回阶段的STAGE_TOOLS注册表"""
+
+def resolve_job_tools(
+    stage: str, job: StageJob, effective_params: dict,
+    *, stage_tools: dict | None = None
+) -> dict[str, Callable]:
+    """返回当前作业合约有效的工具子集"""
+
+def prepare_tool_args(
+    tool_name: str, args: dict, *,
+    manifest: AnalysisManifest, stage: str, job: StageJob,
+    effective_params: dict, artifacts_dir: Path, store: dict | None = None
+) -> dict[str, Any]:
+    """准备工具参数：解析路径、注入Manifest元数据、强制绑图输出位置"""
+
+def validate_stage_inputs(
+    stage: str, manifest: AnalysisManifest, job: StageJob
+) -> list[str]:
+    """通过阶段的validate_stage_inputs辅助函数返回输入问题列表"""
+
+def resolve_plot_save_path(
+    raw: str | None, *,
+    artifacts_dir: Path, default_stem: str,
+    root_directory: Path | None = None
+) -> str:
+    """解析绑图输出路径"""
+
+def filter_tool_kwargs(
+    tool: Callable, args: dict
+) -> tuple[dict, dict]:
+    """过滤LLM提供的无效参数，只保留工具签名中的参数"""
+\end{lstlisting}
+
+\subsection{阶段参数合约}
+
+\begin{lstlisting}[caption={manifest\_params.py 核心接口}]
+STAGE_PARAM_CONTRACTS: dict[str, dict[str, Any]]
+# 每个阶段的参数合约注册表。
+# 在DAG执行前递归拒绝未知的defaults/params键。
+
+# 支持的阶段ID：
+#   "correlator_analysis"  — 关联函数
+#   "renormalization"      — 重整化
+#   "fourier_transform"    — 傅里叶变换
+#   "perturbative_matching" — 微扰匹配
+#   "extrapolation"         — 外推
+\end{lstlisting}
+
+\subsection{各阶段工具注册表}
+
+\begin{lstlisting}[caption={各阶段工具}]
+# correlator_analysis 阶段工具
+- inspect_correlator_scale: 选择关联函数缩放
+- tune_ground_state: 2pt拟合窗口扫描 + 模型平均
+- tune_bare_matrix: 扫描裸矩阵元拟合窗口
+- fit_bare_matrix_grid: 对所有z和样本应用统一拟合窗口
+
+# renormalization 阶段工具
+- apply_ratio_scheme_renormalization: 应用ratio/hybrid-ratio重整化
+- fit_self_renormalization_factor: 拟合自重整化因子
+- apply_self_renormalization: 应用自重整化
+- load_bare_matrix_element: 加载裸矩阵元
+- load_bare_matrix_element_grid: 加载裸矩阵元网格
+- plot_renormalized_matrix_element: 绑制重整化矩阵元
+- plot_self_renormalization_diagnostics: 绑制自重整化诊断图
+
+# fourier_transform 阶段工具
+- load_renormalized_matrix_element_samples: 加载重整化矩阵元
+- run_fourier_transform: 执行傅里叶变换
+- plot_fourier_result: 绑制傅里叶结果
+- plot_fourier_extension_quality_result: 绑制外推质量图
+- report_fourier_result: 生成傅里叶报告
+
+# perturbative_matching 阶段工具
+- load_quasi_pdf: 加载准PDF
+- build_matching_kernel: 构建微扰匹配核
+- apply_matching: 应用匹配
+- plot_matched_pdf: 绑制匹配后PDF
+- report_matching_result: 生成匹配报告
+\end{lstlisting}
+
+%=============================================================================
+\section{开发与贡献}
+%=============================================================================
+
+\subsection{运行测试}
+
+\begin{lstlisting}[caption={运行测试套件}]
+# 运行所有单元测试
+pytest tests/unit/
+
+# 运行特定测试文件
+pytest tests/unit/test_agent.py -v
+pytest tests/unit/test_stage_core.py -v
+pytest tests/unit/test_schemas.py -v
+\end{lstlisting}
+
+\subsection{添加新阶段}
+
+\begin{enumerate}[leftmargin=*]
+    \item 在\texttt{src/lamet\_agent/stages/}下创建新目录
+    \item 实现\texttt{prompts.py}（阶段指令文本）、\texttt{skills.py}（阶段检查和工具目录）和\texttt{functions.py}（工具函数和\texttt{STAGE\_TOOLS}注册表）
+    \item 在\texttt{core/stages.py}中注册阶段ID到包名映射
+    \item 在\texttt{manifest\_params.py}的\texttt{STAGE\_PARAM\_CONTRACTS}中定义参数合约
+    \item 如需要，实现\texttt{reporting.py}生成阶段报告
+\end{enumerate}
+
+\subsection{添加新LLM提供商}
+
+在\texttt{core/llm.py}的\texttt{PROVIDERS}字典中添加新条目：
+\begin{lstlisting}
+PROVIDERS = {
+    "deepseek": {
+        "base_url": "https://api.deepseek.com/v1",
+        "default_model": "deepseek-chat",
+        "key_env": "DEEPSEEK_API_KEY",
+    },
+    "openai": {
+        "base_url": "https://api.openai.com/v1",
+        "default_model": "gpt-4o",
+        "key_env": "OPENAI_API_KEY",
+    },
+    # 添加新的提供商...
+}
+\end{lstlisting}
+
+\end{document}
