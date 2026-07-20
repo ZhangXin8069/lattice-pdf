@@ -14,28 +14,24 @@ echo "============================================"
 # --- LQCD_Master ---
 echo ""
 echo "[1/2] 更新 LQCD_Master ..."
-if [ -d "LQCD_Master" ]; then
-    cd "$SCRIPT_DIR/LQCD_Master"
-    git pull --ff-only
+if [ -d "$SCRIPT_DIR/LQCD_Master" ]; then
+    git -C "$SCRIPT_DIR/LQCD_Master" pull --ff-only
     echo "  ✓ LQCD_Master 更新完成"
 else
     echo "  ⚠ LQCD_Master 目录不存在，正在克隆..."
-    cd "$SCRIPT_DIR"
-    git clone https://github.com/sjtu-sai-agents/LQCD_Master.git
+    git clone https://github.com/sjtu-sai-agents/LQCD_Master.git "$SCRIPT_DIR/LQCD_Master"
     echo "  ✓ LQCD_Master 克隆完成"
 fi
 
 # --- lamet-agent ---
 echo ""
 echo "[2/2] 更新 lamet-agent ..."
-if [ -d "lamet-agent" ]; then
-    cd "$SCRIPT_DIR/lamet-agent"
-    git pull --ff-only
+if [ -d "$SCRIPT_DIR/lamet-agent" ]; then
+    git -C "$SCRIPT_DIR/lamet-agent" pull --ff-only
     echo "  ✓ lamet-agent 更新完成"
 else
     echo "  ⚠ lamet-agent 目录不存在，正在克隆..."
-    cd "$SCRIPT_DIR"
-    git clone https://github.com/Greyyy-HJC/lamet-agent.git
+    git clone https://github.com/Greyyy-HJC/lamet-agent.git "$SCRIPT_DIR/lamet-agent"
     echo "  ✓ lamet-agent 克隆完成"
 fi
 
