@@ -11,9 +11,21 @@ echo "============================================"
 echo "  更新依赖库 - $(date '+%Y-%m-%d %H:%M:%S')"
 echo "============================================"
 
+# --- PyQUDA ---
+echo ""
+echo "[1/3] 更新 PyQUDA ..."
+if [ -d "$SCRIPT_DIR/PyQUDA" ]; then
+    git -C "$SCRIPT_DIR/PyQUDA" pull --ff-only
+    echo "  ✓ PyQUDA 更新完成"
+else
+    echo "  ⚠ PyQUDA 目录不存在，正在克隆..."
+    git clone https://github.com/CLQCD/PyQUDA.git "$SCRIPT_DIR/PyQUDA"
+    echo "  ✓ PyQUDA 克隆完成"
+fi
+
 # --- LQCD_Master ---
 echo ""
-echo "[1/2] 更新 LQCD_Master ..."
+echo "[2/3] 更新 LQCD_Master ..."
 if [ -d "$SCRIPT_DIR/LQCD_Master" ]; then
     git -C "$SCRIPT_DIR/LQCD_Master" pull --ff-only
     echo "  ✓ LQCD_Master 更新完成"
@@ -25,7 +37,7 @@ fi
 
 # --- lamet-agent ---
 echo ""
-echo "[2/2] 更新 lamet-agent ..."
+echo "[3/3] 更新 lamet-agent ..."
 if [ -d "$SCRIPT_DIR/lamet-agent" ]; then
     git -C "$SCRIPT_DIR/lamet-agent" pull --ff-only
     echo "  ✓ lamet-agent 更新完成"
