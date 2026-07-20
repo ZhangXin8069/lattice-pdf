@@ -51,4 +51,5 @@ lib/*
 *.xdv
 *.vrb
 *.fdb_latexmk
+*.env
 ./refer/.*.log
