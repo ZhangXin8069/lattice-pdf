@@ -84,7 +84,7 @@ echo "---" && ls -lh *.pdf
 ```
 
 ### `compile-latex all`
-**重编译项目中所有 44 个 .tex 文件**
+**重编译项目中所有 46 个 .tex 文件**
 
 按目录依次编译：`文档/` → `补充/` → `汇报/` → `代码/` → `reports/` → `refer/` → `agent/文档/`
 
@@ -208,7 +208,7 @@ latexmk -c gluon_pdf_slides.tex
 /compile-latex 文档/gluon_pdf_derivation.tex    # 编译单个文件
 /compile-latex 补充                                # 编译 补充/ 下全部 34 个文件
 /compile-latex reports                             # 编译 reports/ 下 2 个 beamer
-/compile-latex all                                 # 编译全部 44 个文件
+/compile-latex all                                 # 编译全部 46 个文件
 /compile-latex clean                               # 清理辅助文件
 /compile-latex status                              # 查看 PDF 状态
 ```
