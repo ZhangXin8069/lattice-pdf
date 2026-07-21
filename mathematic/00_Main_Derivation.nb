@@ -1,0 +1,92 @@
+(* ::Package:: *)
+
+(* ============================================================================
+   格点QCD中核子非极化胶子TMD部分子分布函数的完整推导
+   使用梯度流重整化方案的连续极限计算
+
+   Lattice QCD Calculation of the Unpolarized Gluon TMD PDF
+   of the Nucleon in the Continuum Limit
+   Using Gradient Flow Renormalization
+
+   基于本库全部文档与代码的综合推导
+   Based on comprehensive derivation from all documents and code in this repository
+
+   参考文献 (References):
+   - Chen et al. (CLQCD/LPC), "Unpolarized gluon PDF of the nucleon
+     from lattice QCD in the continuum limit", arXiv:2510.26425 (2025)
+   - He et al. (LPC), "Unpolarized TMD parton distributions of the nucleon
+     from lattice QCD", PRD 109, 114513 (2024)
+   - Zhang et al. (LPC), "Renormalization of TMD parton distribution
+     on the lattice", PRD 106, 094510 (2022)
+   - Balitsky, Morris, Radyushkin, "Gluon pseudo-distributions at short
+     distances: Forward case", PLB 808, 135621 (2020)
+   - Ji, "Parton physics on a Euclidean lattice", PRL 110, 262002 (2013)
+   - Luescher, "Properties and uses of the Wilson flow in lattice QCD",
+     JHEP 08, 071 (2010)
+   - Monahan & Orginos, "Quasi parton distributions and the gradient flow",
+     JHEP 03, 116 (2017)
+   - Izubuchi et al., "Factorization theorem relating Euclidean and
+     light-cone parton distributions", PRD 98, 056004 (2018)
+   - Li, Ma, Qiu, "Multiplicative renormalizability of quasi-parton operators",
+     PRL 122, 062002 (2019)
+   - Zhang, Ji, Schaefer, Wang, Zhao, "Accessing gluon parton distributions
+     in LaMET", PRL 122, 142001 (2019)
+   ============================================================================ *)
+
+(* 加载所有子模块 *)
+Get[FileNameJoin[{NotebookDirectory[], "01_FieldStrengthTensor.m"}]];
+Get[FileNameJoin[{NotebookDirectory[], "02_GradientFlow.m"}]];
+Get[FileNameJoin[{NotebookDirectory[], "03_GluonQuasiTMD_Operator.m"}]];
+Get[FileNameJoin[{NotebookDirectory[], "04_StapleWilsonLine.m"}]];
+Get[FileNameJoin[{NotebookDirectory[], "05_Renormalization.m"}]];
+Get[FileNameJoin[{NotebookDirectory[], "06_LaMET_Factorization.m"}]];
+Get[FileNameJoin[{NotebookDirectory[], "07_ContinuumExtrapolation.m"}]];
+Get[FileNameJoin[{NotebookDirectory[], "08_CompleteWorkflow.m"}]];
+
+Print["============================================================"];
+Print["  核子非极化胶子TMD PDF的格点QCD计算 - 完整推导框架"];
+Print["  Unpolarized Gluon TMD PDF - Complete Derivation Framework"];
+Print["============================================================"];
+Print[""];
+Print["模块加载完成。各模块功能:"];
+Print["  01_FieldStrengthTensor  - 格点上的场强张量构造 (Clover项)"];
+Print["  02_GradientFlow         - 梯度流(Wilson Flow)重整化理论"];
+Print["  03_GluonQuasiTMD_Operator - 胶子准TMD-PDF算符"];
+Print["  04_StapleWilsonLine     - Staple型Wilson线构造"];
+Print["  05_Renormalization      - Wilson圈减除+混合方案重整化"];
+Print["  06_LaMET_Factorization  - LaMET因子化与微扰匹配"];
+Print["  07_ContinuumExtrapolation - 连续极限与无穷大动量外推"];
+Print["  08_CompleteWorkflow     - 完整计算流程与数值示例"];
+Print[""];
+Print["运行 RunFullDerivation[] 执行完整推导。"];
+
+(* ============================================================================
+   完整推导主函数
+   ============================================================================ *)
+RunFullDerivation[] := Module[{},
+  Print["\n===== 第1步: 格点场强张量 ====="];
+  FieldStrengthTensorDerivation[];
+
+  Print["\n===== 第2步: 梯度流重整化 ====="];
+  GradientFlowDerivation[];
+
+  Print["\n===== 第3步: 胶子准TMD算符 ====="];
+  GluonQuasiTMDDerivation[];
+
+  Print["\n===== 第4步: Staple Wilson线 ====="];
+  StapleWilsonLineDerivation[];
+
+  Print["\n===== 第5步: 重整化方案 ====="];
+  RenormalizationDerivation[];
+
+  Print["\n===== 第6步: LaMET因子化 ====="];
+  LaMETFactorizationDerivation[];
+
+  Print["\n===== 第7步: 连续极限外推 ====="];
+  ContinuumExtrapolationDerivation[];
+
+  Print["\n===== 第8步: 完整数值工作流 ====="];
+  CompleteWorkflowDemo[];
+
+  Print["\n========== 推导完成 =========="];
+];
