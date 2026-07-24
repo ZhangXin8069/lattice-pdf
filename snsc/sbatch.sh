@@ -20,9 +20,6 @@
 # ============================================================================
 # Slurm 作业配置 — 默认单 CPU 环境
 # ============================================================================
-# Slurm 日志写入脚本所在目录的 logs/ 子目录。
-# 请在 snsc/ 目录下提交:  cd snsc && sbatch sbatch.sh
-# ============================================================================
 
 #SBATCH --job-name=gluon_pdf
 #SBATCH --partition=math,cpu6248R,cpueicc,i72c512g
@@ -30,6 +27,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
 
+#SBATCH --chdir=/public/home/zhangxin/lattice-pdf/snsc
 #SBATCH --output=logs/gluon_pdf_%j.out
 #SBATCH --error=logs/gluon_pdf_%j.err
 
@@ -47,16 +45,12 @@ export NUMEXPR_NUM_THREADS=1
 source /public/home/zhangxin/miniconda3/etc/profile.d/conda.sh && conda activate zhangxin-snsc
 
 # ============================================================================
-# 路径配置
+# 路径配置 (工作目录由 #SBATCH --chdir 设为 snsc/)
 # ============================================================================
-
-# 脚本与输出目录
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MAIN_PY="${SCRIPT_DIR}/main.py"
 
 # 时间戳输出目录
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-OUTPUT_DIR="${SCRIPT_DIR}/output_${TIMESTAMP}"
+OUTPUT_DIR="output_${TIMESTAMP}"
 LOG_FILE="${OUTPUT_DIR}/run.log"
 
 # 创建输出目录
@@ -204,7 +198,7 @@ echo "  参数: ${ARGS[*]}" | tee -a "${LOG_FILE}"
 echo "==============================================" | tee -a "${LOG_FILE}"
 
 # 执行 (无缓冲输出, 便于日志实时查看)
-python -u "${MAIN_PY}" "${ARGS[@]}" 2>&1 | tee -a "${LOG_FILE}"
+python -u "./main.py" "${ARGS[@]}" 2>&1 | tee -a "${LOG_FILE}"
 
 EXIT_CODE=${PIPESTATUS[0]}
 
