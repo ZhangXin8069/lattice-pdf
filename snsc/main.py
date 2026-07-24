@@ -2682,6 +2682,611 @@ def _plot_meff_2pt(meff_mean_arr, meff_err_arr, P_arr, output_dir,
 
 
 # ============================================================================
+# 第XIV-B部分: 质子 2pt 关联函数蒸馏计算
+# ============================================================================
+#
+# 目标: 完全复现 examples/donghx/2pt_proton_Cg5gmu_L24x72_mom2_zdir_dcu.py
+#
+# 算法流程:
+#
+# 1. Dirac 矩阵与宇称投影
+#    ──────────────────────
+#    P₊ = ½(γ₀ + γ₄)  — 正宇称投影
+#    P₋ = ½(γ₀ - γ₄)  — 负宇称投影
+#
+#    插值算符 (质子, Cγ₅γ₄):
+#    interProject1 = gamma(7) @ gamma(4)  = γ₃γ₁ · γ₄
+#    interProject2 = gamma(7) @ gamma(4)  = γ₃γ₁ · γ₄
+#    (对于 _Cg5g4 元素类型, 两个投影矩阵相同)
+#
+#    其中 gamma(7) = γ₃γ₁ = -γ₂γ₄γ₅  (电荷共轭 × γ₅ 的组合)
+#
+# 2. 动量涂抹相位因子
+#    ──────────────────
+#    φ_smear(x) = exp( -i · 2π · P_smear · x / L )
+#    P_smear = (momsmear_phase, 0, 0)
+#
+#    本征矢量涂抹:
+#    ṽ_i^a(x) = v_i^a(x) · φ_smear(x)
+#
+# 3. 物理动量相位因子
+#    ──────────────────
+#    φ_P(x) = exp( -i · 2π · P · x / L )
+#    P = (Pz, Py, Px)  动量扫描列表
+#
+# 4. VVV Baryon Block 计算 (每个时间片)
+#    ─────────────────────────────────
+#    Φ_{abc}(P) = Σ_x φ_P(x) · ε_{ijk} · ṽ_i^a(x) · ṽ_j^b(x) · ṽ_k^c(x)
+#
+#    逐 x-层分片计算 (减少 GPU/CPU 内存占用):
+#    Φ += contract("x,ax,bx,cx->abc", φ_P_slice, ṽ_a0, ṽ_b1, ṽ_c2)   [ ε_{012}=+1 ]
+#    Φ += contract("x,ax,bx,cx->abc", φ_P_slice, ṽ_a1, ṽ_b2, ṽ_c0)   [ ε_{120}=+1 ]
+#    Φ += contract("x,ax,bx,cx->abc", φ_P_slice, ṽ_a2, ṽ_b0, ṽ_c1)   [ ε_{201}=+1 ]
+#    Φ -= contract("x,ax,bx,cx->abc", φ_P_slice, ṽ_a0, ṽ_b2, ṽ_c1)   [ ε_{021}=-1 ]
+#    Φ -= contract("x,ax,bx,cx->abc", φ_P_slice, ṽ_a1, ṽ_b0, ṽ_c2)   [ ε_{102}=-1 ]
+#    Φ -= contract("x,ax,bx,cx->abc", φ_P_slice, ṽ_a2, ṽ_b1, ṽ_c0)   [ ε_{210}=-1 ]
+#
+# 5. Perambulator 读取与 Dirac 投影
+#    ─────────────────────────────
+#    τ(t_sink; t_src) 形状: (Nt, 4, 4, Nev1, Nev1)
+#    指标: (t_sink, d_sink, d_source, ev_sink, ev_source)
+#
+#    Dirac 投影 perambulator:
+#    (ΓτΓ)(t_sink) = contract("gh,thkbe,jk->tgjbe", interProject1, τ, interProject2)
+#    形状: (Nt, 4, 4, Nev1, Nev1)
+#
+# 6. Wick 收缩 (对每个 (t_sink, t_source) 且 2 ≤ deltat ≤ 32)
+#    ────────────────────────────────────────────────────────
+#
+#    Direct 项 (夸克线无交换):
+#    C₂^{dir}_{il}(t_snk, t_src) =
+#      contract("abc,gjad,gjbe,ilcf,def->il",
+#               VVV_snk, τ_snk, ΓτΓ_snk, τ_snk, VVV_src*)
+#
+#    Exchange 项 (两夸克线交换, Fermi 统计负号):
+#    C₂^{ex}_{il}(t_snk, t_src) =
+#      contract("abc,glaf,gjbe,ijcd,def->il",
+#               VVV_snk, τ_snk, ΓτΓ_snk, τ_snk, VVV_src*)
+#
+#    总关联函数矩阵:
+#    C₂(t_snk, t_src) = Direct - Exchange
+#    形状: (Nt, Nt, 4, 4)
+#
+# 7. 宇称投影
+#    ─────────
+#    C₂^{pp}(t_snk, t_src) = contract("li,yxil->yx", P₊, C₂)
+#    C₂^{pm}(t_snk, t_src) = contract("li,yxil->yx", P₋, C₂)
+#    形状: (Nt, Nt)  — 正/负宇称投影后的 (t_sink, t_source) 矩阵
+#
+# 8. 边界条件符号修正
+#    ────────────────
+#    gluon 2pt 关联函数中的反粒子传播子需要符号修正:
+#    pp: 当 t_snk < t_src 时 (向后传播), 乘 -1
+#    pm: 当 t_snk > t_src 时 (向前传播), 乘 -1
+#
+# 9. 输出文件 (命名与参考代码完全一致)
+#    ────────────────────────────────
+#    Raw 收缩矩阵:
+#      twopt_slice_pp_Px{Px}Py{Py}Pz{Pz}_eginphase{mom_smear}{element}_contract_conf{conf_id}.npy
+#      形状: (Nt, Nt, 4, 4)
+#
+#    Parity 投影后:
+#      twopt_slice_pp_Px{Px}Py{Py}Pz{Pz}_eginphase{mom_smear}{element}_nopol_ss_conf{conf_id}.npy
+#      形状: (Nt, Nt)  (仅 pp, 正宇称投影)
+# ============================================================================
+
+
+def run_proton_2pt_analysis(args: "argparse.Namespace") -> None:
+    """运行质子 2pt 关联函数蒸馏计算。
+
+    完全复现 examples/donghx/2pt_proton_Cg5gmu_L24x72_mom2_zdir_dcu.py
+    的算法与输出格式。
+
+    使用 NumPy 后端 (CPU), 与 DCU 参考代码的 PyTorch 后端在数值上等价。
+    """
+    xp = np
+
+    # ── 参数提取 ──────────────────────────────────────────
+    Nt = args.Nt
+    Nx = args.Nx
+    Nev  = getattr(args, 'Nev',  100)
+    Nev1 = getattr(args, 'Nev1', 100)
+    conf_id = str(args.conf_start)
+
+    Px = args.Px
+    Py = args.Py
+    Pz_start = args.Pz  # 单动量模式
+
+    # 动量涂抹 (与参考代码的硬编码值一致)
+    mom_smear        = getattr(args, 'mom_smear',       -2)
+    momsmear_phase   = getattr(args, 'mom_smear_phase',  2)
+
+    # 插值算符类型 (默认 _Cg5g4)
+    element = getattr(args, 'element', '_Cg5g4')
+
+    # 动量列表 (参考代码: Pzlist = [-2, -3, -4, -5, -6])
+    Pz_list_str = getattr(args, 'Pz_list', None)
+    if Pz_list_str:
+        Pzlist = [int(p) for p in Pz_list_str.split(",")]
+    else:
+        Pzlist = [Pz_start]
+
+    # 数据路径
+    eig_dir = getattr(args, 'eig_dir', None)
+    if eig_dir is None:
+        eig_dir = (
+            "/public/group/lqcd/eigensystem/"
+            "beta6.20_mu-0.2770_ms-0.2400_L24x72/{conf_id}/"
+        ).format(conf_id=conf_id)
+
+    peram_u_dir = getattr(args, 'peram_u_dir', None)
+    if peram_u_dir is None:
+        peram_u_dir = (
+            "/public/home/sunp/sunpeng_new_disk/mom_smear_perambulators/"
+            "beta6.20_mu-0.2770_ms-0.2400_L24x72/output_dir_data/"
+            "mz2_my0_mx0/{conf_id}/"
+        ).format(conf_id=conf_id)
+
+    # 参考数据目录 (已有结果, 用于对比)
+    ref_corr_nucl_dir = getattr(args, 'corr_nucl_dir', None)
+    if ref_corr_nucl_dir is None:
+        ref_corr_nucl_dir = (
+            "/public/group/lqcd/donghx/2pt_Result/"
+            "beta6.20_mu-0.2770_ms-0.2400_L24x72/momsmear-2z/{conf_id}/"
+        ).format(conf_id=conf_id)
+
+    # 生成数据输出目录 (新计算的结果)
+    output_dir = args.output_dir
+    gen_dir = os.path.join(output_dir, "data")
+    plot_dir = os.path.join(output_dir, "plots")
+    os.makedirs(gen_dir, exist_ok=True)
+    os.makedirs(plot_dir, exist_ok=True)
+
+    # 检查参考数据是否存在
+    has_ref = os.path.isdir(ref_corr_nucl_dir) if ref_corr_nucl_dir else False
+
+    print(f"\n{'='*70}")
+    print(f"  质子 2pt 关联函数蒸馏计算")
+    print(f"{'='*70}")
+    print(f"  格点: {Nt}×{Nx}³, Nev={Nev}, Nev1={Nev1}")
+    print(f"  组态: conf_id={conf_id}")
+    print(f"  动量列表 Pz: {Pzlist},  Py={Py}, Px={Px}")
+    print(f"  动量涂抹: mom_smear={mom_smear}, phase={momsmear_phase}")
+    print(f"  插值算符: {element}")
+    print(f"  本征矢量: {eig_dir}")
+    print(f"  Peramb:   {peram_u_dir}")
+    print(f"  参考数据: {ref_corr_nucl_dir}  {'(存在)' if has_ref else '(不存在, 跳过对比)'}")
+    print(f"  生成输出: {gen_dir}")
+    print(f"  作图输出: {plot_dir}")
+    print(f"{'='*70}\n")
+
+    # ── Dirac 矩阵 (DeGrand-Rossi 基 + NumPy) ─────────────
+    gamma = build_gamma_matrices(xp)
+
+    # 宇称投影矩阵
+    # P₊ = ½(γ₀ + γ₄) — 正宇称 (γ₀ = I 单位矩阵)
+    # P₋ = ½(γ₀ - γ₄) — 负宇称
+    matrix_pplus  = 0.5 * (gamma[0] + gamma[4])
+    matrix_pminus = 0.5 * (gamma[0] - gamma[4])
+
+    # 插值算符矩阵 (Cγ₅γ₄ 用 _Cg5g4 元素)
+    # gamma(7) = γ₃γ₁ = -γ₂γ₄γ₅
+    # gamma(4) = γ₄
+    if element == "_Cg5g4":
+        interProject1 = xp.matmul(gamma[7], gamma[4])
+        interProject2 = xp.matmul(gamma[7], gamma[4])
+    elif element == "_Cg5g3":
+        interProject1 = xp.matmul(gamma[7], gamma[3])
+        interProject2 = xp.matmul(gamma[7], gamma[3])
+    elif element == "_Cg5":
+        interProject1 = gamma[7]
+        interProject2 = gamma[7]
+    else:
+        interProject1 = xp.matmul(gamma[7], gamma[4])
+        interProject2 = xp.matmul(gamma[7], gamma[4])
+
+    print(f"  宇称投影: P₊ shape={matrix_pplus.shape}")
+    print(f"  插值算符:")
+    print(f"    interProject1 =\n{interProject1}")
+    print(f"    interProject2 =\n{interProject2}")
+    print(f"    element = {element}")
+
+    # ── 动量涂抹相位因子 φ_smear(x) ────────────────────────
+    # φ_smear(x) = exp(-i·2π·P_smear·x / Nx)
+    # P_smear = (momsmear_phase, 0, 0)
+    print(f"\n[INFO] 计算动量涂抹相位因子 (P_smear=({momsmear_phase},0,0))...")
+    phase_smear = compute_phase_factor(
+        np.array([momsmear_phase, 0, 0]), Nx
+    )  # shape (Nx³), complex
+
+    # ── 本征矢量读取函数 ──────────────────────────────────
+    # (每次读取后对器件传输, numpy 下直接操作 CPU)
+    def read_eigvecs_smeared(t: int) -> np.ndarray:
+        """读取时间片 t 的本征矢量并施加动量涂抹。
+
+        返回 shape (Nev, Nx³, 3), complex128。
+        与参考代码 readin_eigvecs() 等价。
+        """
+        filename = f"{eig_dir}/eigvecs_t{t:03d}_{conf_id}"
+        with open(filename, "rb") as f:
+            file_size = os.path.getsize(filename)
+            Nev_full = int(file_size / 8 / (Nx * Nx * Nx * 3 * 2))
+            data = np.fromfile(f, dtype="f8").reshape(Nev_full, Nx, Nx, Nx, 3, 2)
+        eigvecs = data[..., 0] + 1j * data[..., 1]            # → (Nev, Nx,Nx,Nx, 3)
+        eigvecs = eigvecs[:Nev1]                                # 截断
+        eigvecs = eigvecs.reshape(Nev_full, Nx * Nx * Nx, 3)   # → (Nev, Nx³, 3)
+
+        # 动量涂抹: ṽ_i^a(x) = v_i^a(x) × φ_smear(x)
+        eigvecs_mom = contract("vxa,x->vxa", eigvecs, phase_smear)
+        return eigvecs_mom
+
+    # ── Perambulator 读取函数 ──────────────────────────────
+    def read_peram(t_source: int) -> np.ndarray:
+        """读取 source 时间片 t_source 的 perambulator。
+
+        返回 shape (Nt, 4, 4, Nev1, Nev1), complex64。
+        与参考代码 readin_peram() 等价。
+        """
+        # 读取 4 个 Dirac 分量 (d_source = 0,1,2,3)
+        parts = []
+        for d_source in range(4):
+            fname = f"{peram_u_dir}/perams.{conf_id}.{d_source}.{t_source}"
+            with open(fname, "rb") as f:
+                parts.append(np.fromfile(f, dtype="f8"))
+        peram_raw = np.concatenate(parts)
+
+        Nev_full = int(np.sqrt(peram_raw.size / (4 * 4 * Nt * 2)))
+        # reshape: (d_source, t_sink, ev_source, d_sink, ev_sink, complex)
+        peram = peram_raw.reshape(4, Nt, Nev_full, 4, Nev_full, 2)
+        # transpose: → (t_sink, d_sink, d_source, ev_sink, ev_source, complex)
+        peram = peram.transpose(1, 3, 0, 4, 2, 5)
+        peram = peram[..., 0] + 1j * peram[..., 1]
+        peram = peram[:, :, :, :Nev1, :Nev1]         # 截断
+        peram = peram.astype(np.complex64)
+        return peram
+
+    # ── VVV 计算函数 (对单个动量) ─────────────────────────
+    def compute_vvv_for_momentum(mom: np.ndarray) -> np.ndarray:
+        """为所有时间片计算 VVV Baryon Block。
+
+        返回 shape (Nt, Nev1, Nev1, Nev1), complex128。
+        与参考代码 VVV_Calc_cupy() 等价 (用 numpy 替代 torch)。
+        """
+        VVV_sink = np.zeros((Nt, Nev1, Nev1, Nev1), dtype=complex)
+
+        for t in range(Nt):
+            t1 = time.perf_counter()
+            eigvecs = read_eigvecs_smeared(t)               # (Nev, Nx³, 3)
+            t2 = time.perf_counter()
+            print(f"  [VVV] t={t:3d} read eigvecs done, "
+                  f"time={t2-t1:.3f}s")
+
+            t3 = time.perf_counter()
+            phase_P = compute_phase_factor(mom, Nx)          # (Nx³)
+            layer_size = Nx * Nx
+
+            # 逐 x-层计算 (减少中间数组大小)
+            for xi in range(Nx):
+                start = xi * layer_size
+                end   = (xi + 1) * layer_size
+                ps = phase_P[start:end]                      # (Nx²)
+                es = eigvecs[:, start:end, :]                # (Nev, Nx², 3)
+
+                # 6-term ε_{ijk} 收缩
+                VVV_sink[t] += contract("x,ax,bx,cx->abc",
+                                         ps, es[:, :, 0], es[:, :, 1], es[:, :, 2])
+                VVV_sink[t] += contract("x,ax,bx,cx->abc",
+                                         ps, es[:, :, 1], es[:, :, 2], es[:, :, 0])
+                VVV_sink[t] += contract("x,ax,bx,cx->abc",
+                                         ps, es[:, :, 2], es[:, :, 0], es[:, :, 1])
+                VVV_sink[t] -= contract("x,ax,bx,cx->abc",
+                                         ps, es[:, :, 0], es[:, :, 2], es[:, :, 1])
+                VVV_sink[t] -= contract("x,ax,bx,cx->abc",
+                                         ps, es[:, :, 1], es[:, :, 0], es[:, :, 2])
+                VVV_sink[t] -= contract("x,ax,bx,cx->abc",
+                                         ps, es[:, :, 2], es[:, :, 1], es[:, :, 0])
+
+            t4 = time.perf_counter()
+            print(f"  [VVV] t={t:3d} contraction done, time={t4-t3:.3f}s")
+
+        return VVV_sink
+
+    # ── 主循环: 对每个 Pz ──────────────────────────────────
+    t_total_start = time.perf_counter()
+
+    for Pz in Pzlist:
+        Mom = np.array([Pz, Py, Px])
+        print(f"\n{'─'*60}")
+        print(f"  动量 P = ({Pz}, {Py}, {Px})")
+        print(f"{'─'*60}")
+
+        # ── 计算 VVV ──
+        t_vvv_start = time.perf_counter()
+        VVV_sink = compute_vvv_for_momentum(Mom)
+        t_vvv_end = time.perf_counter()
+        print(f"  VVV 计算总耗时: {t_vvv_end - t_vvv_start:.3f}s")
+
+        # ── Wick 收缩 ──
+        contrac_nucl_matrix = np.zeros((Nt, Nt, 4, 4), dtype=complex)
+        print(f"\n  Wick 收缩开始...")
+
+        t_contract_start = time.perf_counter()
+        for t_source in range(Nt):
+            t_src_start = time.perf_counter()
+
+            VVV_source = VVV_sink[t_source].conj()
+            peram_u = read_peram(t_source)                 # (Nt, 4, 4, Nev1, Nev1)
+
+            # Dirac 投影 perambulator: Γ τ Γ
+            CG5peram_uCG5 = contract(
+                "gh,thkbe,jk->tgjbe",
+                interProject1, peram_u, interProject2,
+            )  # → (Nt, 4, 4, Nev1, Nev1)
+
+            for t_sink in range(Nt):
+                deltat = (t_sink - t_source + Nt) % Nt
+                # 仅收缩满足 2 ≤ deltat ≤ 32 的时间分离
+                if 2 <= deltat <= 32:
+                    # Direct - Exchange
+                    contrac_nucl_matrix[t_sink, t_source] = (
+                        contract(
+                            "abc,gjad,gjbe,ilcf,def->il",
+                            VVV_sink[t_sink],
+                            peram_u[t_sink],
+                            CG5peram_uCG5[t_sink],
+                            peram_u[t_sink],
+                            VVV_source,
+                        )
+                        - contract(
+                            "abc,glaf,gjbe,ijcd,def->il",
+                            VVV_sink[t_sink],
+                            peram_u[t_sink],
+                            CG5peram_uCG5[t_sink],
+                            peram_u[t_sink],
+                            VVV_source,
+                        )
+                    )
+
+            t_src_end = time.perf_counter()
+            print(f"  t_source={t_source:3d} done, time={t_src_end-t_src_start:.3f}s")
+
+        t_contract_end = time.perf_counter()
+        print(f"  Wick 收缩总耗时: {t_contract_end - t_contract_start:.3f}s")
+
+        # ── 保存 raw 收缩矩阵 (写入生成目录) ──
+        raw_filename = (
+            f"twopt_slice_pp_Px{Px}Py{Py}Pz{Pz}"
+            f"_eginphase{mom_smear}{element}_contract_conf{conf_id}.npy"
+        )
+        np.save(f"{gen_dir}/{raw_filename}", contrac_nucl_matrix)
+        print(f"  [GEN] Raw: {gen_dir}/{raw_filename}")
+        print(f"         shape={contrac_nucl_matrix.shape}")
+
+        # ── 宇称投影 ──
+        t_parity_start = time.perf_counter()
+
+        # pp: P₊ 投影
+        contrac_nucl_pp = contract(
+            "li,yxil->yx", matrix_pplus, contrac_nucl_matrix
+        )
+        # pm: P₋ 投影 (参考代码保存但此处仅需 pp)
+        contrac_nucl_pm = contract(
+            "li,yxil->yx", matrix_pminus, contrac_nucl_matrix
+        )
+
+        # ── 边界条件符号修正 ──
+        # 反粒子传播子需要符号翻转
+        for t_source in range(Nt):
+            for t_sink in range(Nt):
+                if t_sink < t_source:
+                    contrac_nucl_pp[t_sink, t_source] *= -1.0
+                if t_sink > t_source:
+                    contrac_nucl_pm[t_sink, t_source] *= -1.0
+
+        t_parity_end = time.perf_counter()
+        print(f"  宇称投影耗时: {t_parity_end - t_parity_start:.3f}s")
+
+        # ── 保存 parity 投影结果 ──
+        pp_filename = (
+            f"twopt_slice_pp_Px{Px}Py{Py}Pz{Pz}"
+            f"_eginphase{mom_smear}{element}_nopol_ss_conf{conf_id}.npy"
+        )
+        np.save(f"{gen_dir}/{pp_filename}", contrac_nucl_pp)
+        print(f"  [GEN] PP: {gen_dir}/{pp_filename}")
+        print(f"         shape={contrac_nucl_pp.shape}")
+
+        # ── 与参考数据对比 ──
+        _compare_2pt_result(
+            ref_corr_nucl_dir=ref_corr_nucl_dir,
+            gen_dir=gen_dir,
+            plot_dir=plot_dir,
+            has_ref=has_ref,
+            raw_filename=raw_filename,
+            pp_filename=pp_filename,
+            contrac_nucl_matrix=contrac_nucl_matrix,
+            contrac_nucl_pp=contrac_nucl_pp,
+            Px=Px, Py=Py, Pz=Pz,
+            mom_smear=mom_smear,
+            element=element,
+            conf_id=conf_id,
+        )
+
+        print(f"  Pz={Pz} 完成。")
+
+    t_total_end = time.perf_counter()
+    print(f"\n{'═'*70}")
+    print(f"  JOB: ran successfully")
+    print(f"  总耗时: {t_total_end - t_total_start:.3f}s")
+    print(f"  生成数据: {gen_dir}")
+    if has_ref:
+        print(f"  参考数据: {ref_corr_nucl_dir}")
+    print(f"  作图输出: {plot_dir}")
+    print(f"{'═'*70}\n")
+
+
+def _compare_2pt_result(
+    ref_corr_nucl_dir: str,
+    gen_dir: str,
+    plot_dir: str,
+    has_ref: bool,
+    raw_filename: str,
+    pp_filename: str,
+    contrac_nucl_matrix: np.ndarray,
+    contrac_nucl_pp: np.ndarray,
+    Px: int, Py: int, Pz: int,
+    mom_smear: int,
+    element: str,
+    conf_id: str,
+) -> None:
+    """将生成数据与参考数据对比, 输出差异报告与对比图。
+
+    对比指标:
+      - 最大绝对差异: max|gen - ref|
+      - 平均绝对差异: mean|gen - ref|
+      - 相对差异: |gen - ref| / (|ref| + ε) 的最大值与平均值
+      - 逐元素一致性: |gen - ref| < tol 的比例
+    """
+    if not has_ref:
+        print(f"\n  [COMPARE] 参考数据目录不存在, 跳过对比。")
+        return
+
+    comp_results = {}  # {label: dict of metrics}
+
+    # ── 对比 raw 收缩矩阵 ──
+    ref_raw_path = f"{ref_corr_nucl_dir}/{raw_filename}"
+    if os.path.exists(ref_raw_path):
+        ref_raw = np.load(ref_raw_path)
+        gen_raw = contrac_nucl_matrix
+        metrics = _compute_comparison_metrics(gen_raw, ref_raw, "Raw (Nt,Nt,4,4)")
+        comp_results["Raw 收缩矩阵"] = metrics
+        _plot_2pt_comparison(
+            gen_raw, ref_raw, plot_dir,
+            prefix=f"raw_Pz{Pz}", label="C₂(t_snk,t_src)"
+        )
+    else:
+        print(f"  [COMPARE] 参考 Raw 文件不存在: {ref_raw_path}")
+
+    # ── 对比 parity 投影结果 ──
+    ref_pp_path = f"{ref_corr_nucl_dir}/{pp_filename}"
+    if os.path.exists(ref_pp_path):
+        ref_pp = np.load(ref_pp_path)
+        gen_pp = contrac_nucl_pp
+        metrics = _compute_comparison_metrics(gen_pp, ref_pp, "PP (Nt,Nt)")
+        comp_results["Parity 投影 (PP)"] = metrics
+        _plot_2pt_comparison(
+            gen_pp, ref_pp, plot_dir,
+            prefix=f"pp_Pz{Pz}", label="C₂^{pp}(t_snk,t_src)"
+        )
+    else:
+        print(f"  [COMPARE] 参考 PP 文件不存在: {ref_pp_path}")
+
+    # ── 打印汇总对比报告 ──
+    _print_comparison_report(comp_results, Pz=Pz)
+
+    # ── 保存对比数据 ──
+    np.savez(
+        f"{gen_dir}/compare_Pz{Pz}_conf{conf_id}.npz",
+        gen_raw=contrac_nucl_matrix if comp_results else None,
+        gen_pp=contrac_nucl_pp if comp_results else None,
+        **{k.replace(" ", "_"): v for k, v in comp_results.items()},
+    )
+
+
+def _compute_comparison_metrics(gen: np.ndarray, ref: np.ndarray,
+                                 label: str) -> dict:
+    """计算两组数据的对比指标。"""
+    diff = np.abs(gen - ref)
+    abs_ref = np.abs(ref)
+    eps = 1e-15
+
+    max_diff = float(np.max(diff))
+    mean_diff = float(np.mean(diff))
+    # 相对差异 (逐元素)
+    rel_diff = diff / (abs_ref + eps)
+    max_rel = float(np.max(rel_diff))
+    mean_rel = float(np.mean(rel_diff))
+    # 一致性 (容差范围内的比例)
+    frac_1e6  = float(np.mean(diff < 1e-6))
+    frac_1e10 = float(np.mean(diff < 1e-10))
+
+    print(f"\n  [COMPARE] {label}:")
+    print(f"    最大绝对差异:  {max_diff:.6e}")
+    print(f"    平均绝对差异:  {mean_diff:.6e}")
+    print(f"    最大相对差异:  {max_rel:.6e}")
+    print(f"    平均相对差异:  {mean_rel:.6e}")
+    print(f"    Δ<1e-6 比例:   {frac_1e6:.4%}")
+    print(f"    Δ<1e-10 比例:  {frac_1e10:.4%}")
+
+    return {
+        "max_abs": max_diff, "mean_abs": mean_diff,
+        "max_rel": max_rel, "mean_rel": mean_rel,
+        "frac_1e6": frac_1e6, "frac_1e10": frac_1e10,
+    }
+
+
+def _print_comparison_report(comp_results: dict, Pz: int) -> None:
+    """打印汇总对比报告。"""
+    if not comp_results:
+        return
+    print(f"\n{'─'*60}")
+    print(f"  对比报告 — Pz={Pz}")
+    print(f"{'─'*60}")
+    header = f"  {'数据集':<22s} {'max|Δ|':>12s} {'mean|Δ|':>12s} {'max|Δ/ref|':>12s} {'Δ<1e-6':>8s}"
+    print(header)
+    print(f"  {'─'*68}")
+    for label, m in comp_results.items():
+        print(f"  {label:<22s} {m['max_abs']:12.4e} {m['mean_abs']:12.4e}"
+              f" {m['max_rel']:12.4e} {m['frac_1e6']:7.1%}")
+    print(f"{'─'*60}\n")
+
+
+def _plot_2pt_comparison(gen: np.ndarray, ref: np.ndarray,
+                          plot_dir: str, prefix: str, label: str) -> None:
+    """画对比图: 生成 vs 参考的 scatter 图 + 差异直方图。
+
+    子图:
+      1. 散点图: Re(ref) vs Re(gen) (理想情况 y=x 对角线)
+      2. 差异直方图: log10|gen - ref|
+    """
+    if not HAS_MPL:
+        return
+
+    # 展平为 1D (只取实部)
+    gen_flat = np.real(gen).ravel()
+    ref_flat = np.real(ref).ravel()
+    diff_flat = np.abs(gen - ref).ravel()
+    # 跳过零
+    nonzero = diff_flat > 0
+    diff_log = np.log10(diff_flat[nonzero]) if np.any(nonzero) else np.array([-16])
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+
+    # 子图 1: scatter
+    axes[0].scatter(ref_flat, gen_flat, s=1, alpha=0.3)
+    lims = [np.min(ref_flat), np.max(ref_flat)]
+    axes[0].plot(lims, lims, 'r--', linewidth=1, label='y=x (完全一致)')
+    axes[0].set_xlabel(f"Re(Ref) — {label}")
+    axes[0].set_ylabel(f"Re(Gen) — {label}")
+    axes[0].set_title(f"Scatter: Generated vs Reference (Pz={prefix.split('Pz')[-1]})")
+    axes[0].legend(fontsize=9)
+    axes[0].grid(True, alpha=0.3)
+
+    # 子图 2: 差异直方图
+    axes[1].hist(diff_log, bins=50, color='C1', alpha=0.7, edgecolor='k')
+    axes[1].set_xlabel("log10(|Gen - Ref|)")
+    axes[1].set_ylabel("Count")
+    axes[1].set_title(f"Difference Distribution (Pz={prefix.split('Pz')[-1]})")
+    axes[1].axvline(x=-6, color='r', linestyle='--', linewidth=1, label='1e-6')
+    axes[1].axvline(x=-10, color='g', linestyle='--', linewidth=1, label='1e-10')
+    axes[1].legend(fontsize=9)
+
+    plt.tight_layout()
+    fig.savefig(f"{plot_dir}/{prefix}_comparison.pdf", bbox_inches='tight')
+    plt.close(fig)
+    print(f"  [PLOT] 对比图已保存: {plot_dir}/{prefix}_comparison.pdf")
+
+
+# ============================================================================
 # 第十五部分: 命令行参数解析与主入口
 # ============================================================================
 
@@ -2699,23 +3304,22 @@ def parse_args() -> argparse.Namespace:
   python main.py --analysis-type pdf --steps 1,2,3,6 --xp cupy --ensemble L24x72 --conf-start 46000 \\
       --gauge-file /path/to/config.dat
 
+  # 质子 2pt 蒸馏 (复现 DCU 代码)
+  python main.py --analysis-type proton-2pt --Nt 72 --Nx 24 \\
+      --Pz-list "-2,-3,-4,-5,-6" --conf-start 46000
+
   # 2pt 有效质量分析 (匹配 main-2pt.py)
   python main.py --analysis-type 2pt --Nt 72 --Nx 24 --alttc 0.1053 \\
       --conf-start 10050 --conf-step 50 --conf-num 52 \\
       --iog-2pt-path "./beta6.20_mu-0.2770_ms-0.2400_L%dx%d/sush_iog/pion_2pt_Px%%dPy%%dPz%%d_ENV%%d_conf%%d_tsep-1_mass-0.2770.iog"
-
-  # 自定义格点 + 动量扫描
-  python main.py --analysis-type pdf --steps 1,2,3,6,10,11,12,13 --xp numpy --Nt 72 --Nx 24 \\
-      --Pz-list "3,4,5,6,7,8" --conf-start 10000 --conf-step 50 --conf-num 5 \\
-      --gauge-file /path/to/config.dat
         """,
     )
 
     # --- 分析类型 ---
     parser.add_argument("--analysis-type", type=str, default="pdf",
-                        choices=["pdf", "2pt"],
-                        help="分析模式: pdf (胶子PDF全流程) 或 2pt (2pt有效质量)"
-                             " [默认: pdf]")
+                        choices=["pdf", "2pt", "proton-2pt"],
+                        help="分析模式: pdf (胶子PDF全流程), 2pt (2pt有效质量), "
+                             "proton-2pt (质子蒸馏2pt) [默认: pdf]")
 
     # --- 后端与数据类型 ---
     parser.add_argument("--xp", type=str, default="numpy",
@@ -2836,6 +3440,10 @@ def parse_args() -> argparse.Namespace:
                         help="有效质量图的 y 范围, 逗号分隔 [默认: 0.0,1.0]")
     parser.add_argument("--iog-2pt-path", type=str, default=None,
                         help="IOG 2pt 关联函数文件路径模板 (含 %%d 格式说明符)")
+    parser.add_argument("--element", type=str, default="_Cg5g4",
+                        choices=["_Cg5g4", "_Cg5g3", "_Cg5",
+                                 "_offdiag01", "_offdiag02", "_offdiag12"],
+                        help="质子插值算符元素类型 [默认: _Cg5g4]")
     parser.add_argument("--no-plot", action="store_true",
                         help="禁用所有作图输出")
 
@@ -2876,6 +3484,12 @@ def main():
         print(f"[INFO] 分析类型: 2pt 有效质量分析")
         print(f"[INFO] 输出目录: {args.output_dir}")
         run_2pt_analysis(args)
+        return
+
+    if args.analysis_type == "proton-2pt":
+        print(f"[INFO] 分析类型: 质子 2pt 蒸馏计算")
+        print(f"[INFO] 输出目录: {args.output_dir}")
+        run_proton_2pt_analysis(args)
         return
 
     # --- PDF 模式 ---
