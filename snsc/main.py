@@ -255,22 +255,29 @@ except ImportError:
     plt = None
 
 # --- IOG 读取与 2pt 分析支持 (继承自 examples/zhangxin/) ---
-# 注: include.py 依赖编译好的 iog_reader/iog.so (C 扩展), 仅在集群上可用。
-# 本地测试时 HAS_INCLUDE = False, 2pt 分析模式将不可用。
+# 注: iog_reader.py 内部使用 os.getcwd() 定位 iog.so。
+#     必须在 examples/zhangxin/ 目录下导入才能正确找到 .so 文件。
+#     导入时临时切换 CWD 以绕过此限制。
 HAS_INCLUDE = False
 _data_analyse = None
 _iog_read_fn = None
 try:
     _script_dir = os.path.dirname(os.path.abspath(__file__))
-    _examples_dir = os.path.join(os.path.dirname(_script_dir), "examples", "zhangxin")
+    _repo_root = os.path.dirname(_script_dir)
+    _examples_dir = os.path.join(_repo_root, "examples", "zhangxin")
     if _examples_dir not in sys.path:
         sys.path.insert(0, _examples_dir)
-    # 注意: include.py 在模块级别加载 iog.so, 若 .so 不存在则导入失败
-    from include import data_analyse as _data_analyse
-    from iog_reader.iog_reader import iog_read
-    _iog_read_fn = iog_read
-    HAS_INCLUDE = True
-    print("[INFO] IOG 读取支持已加载 (include.py + iog.so)。")
+    # iog_reader.py 使用 os.getcwd() 定位 iog.so, 必须切换到其所在目录
+    _saved_cwd = os.getcwd()
+    os.chdir(_examples_dir)
+    try:
+        from include import data_analyse as _data_analyse
+        from iog_reader.iog_reader import iog_read
+        _iog_read_fn = iog_read
+        HAS_INCLUDE = True
+        print("[INFO] IOG 读取支持已加载 (include.py + iog.so)。")
+    finally:
+        os.chdir(_saved_cwd)
 except (ImportError, OSError) as e:
     print(f"[INFO] IOG 读取不可用 (集群专用): {e}")
 

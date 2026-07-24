@@ -122,7 +122,6 @@ ARGS=(
     --Px "${PX}"
     --Py "${PY}"
     --Pz "${PZ}"
-    --Pz-list "${PZ_LIST}"
     --mom-smear "${MOM_SMEAR}"
     --mom-smear-phase "${MOM_SMEAR_PHASE}"
     --element "${ELEMENT}"
@@ -130,6 +129,11 @@ ARGS=(
     --peram-u-dir "${PERAM_U_DIR}"
     --corr-nucl-dir "${CORR_NUCL_DIR}"
 )
+
+# --Pz-list 仅在值非空时追加以避免 argparse 报错
+if [ -n "${PZ_LIST}" ]; then
+    ARGS+=(--Pz-list "${PZ_LIST}")
+fi
 
 echo "==============================================" | tee -a "${LOG_FILE}"
 echo "  质子 2pt 关联函数蒸馏计算" | tee -a "${LOG_FILE}"
