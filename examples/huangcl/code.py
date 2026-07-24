@@ -69,7 +69,7 @@ def resample(corr, jack, Nsample):
 
 # load data
 for i in range(Nconf):
-    conf_id = 6200 + i * 200
+    conf_id = 8200 + i * 200
     _corr[i] = np.load(
         f"/public/group/lqcd/donghx/2pt_Result/{conf_name}/momsmear2z/{conf_id}/twopt_slice_pp_Px{Px}Py{Py}Pz{Pz}_eginphase2_Cg5g4_nopol_ss_conf{conf_id}.npy"
     )
