@@ -1,0 +1,132 @@
+# ============================================================================
+# LQCD_Master Planner v1 — Proton 2pt Distillation on L24x72
+# ============================================================================
+# Generated: 2026-07-24
+# Model: deepseek-v4-pro (Planner solve → critique → rewrite)
+# Task:  "Compute the proton two-point correlation function using the
+#         distillation method on the L24x72 lattice ensemble."
+# ============================================================================
+
+task:
+  mode: standard                    # 标准模式 (非 freeform)
+  description: >
+    Compute the proton two-point correlation function C₂(t_snk, t_src) using
+    the distillation (Laplacian-Heaviside) method on the beta=6.20,
+    L=24³×72 lattice ensemble.  The computation uses Nev=100 lowest eigenmodes
+    of the 3D Laplace operator -∇², momentum-smeared with mom_smear=-2
+    (phase=2).  Five boost momenta are scanned: Pz = -2, -3, -4, -5, -6
+    (z-direction, units of 2π/L).  The interpolator uses element="_Cg5g4"
+    (Cγ₅γ₄ Dirac structure).
+
+physics:
+  target_observable: proton_2pt_correlator
+  hadron: proton
+
+  lattice:
+    ensemble: L24x72
+    beta: 6.20
+    mu_l: -0.2770
+    mu_s: -0.2400
+    geometry: [72, 24, 24, 24]     # [Nt, Nz, Ny, Nx]
+    lattice_spacing_fm: 0.1053
+
+  distillation:
+    method: Laplacian-Heaviside
+    nev: 100                        # Total eigenmodes
+    nev1: 100                       # Modes used in contraction
+    eig_dir: >
+      /public/group/lqcd/eigensystem/
+      beta6.20_mu-0.2770_ms-0.2400_L24x72/{conf_id}/
+
+    momentum_smearing:
+      mom_smear: -2
+      mom_smear_phase: 2
+      formula: "φ(x) = exp(-i·2π·P_smear·x / Nx)"
+
+    perambulator:
+      source: >
+        /public/home/sunp/sunpeng_new_disk/mom_smear_perambulators/
+        beta6.20_mu-0.2770_ms-0.2400_L24x72/output_dir_data/
+        mz2_my0_mx0/{conf_id}/
+      format: binary float64
+      shape: (Nt, 4, 4, Nev1, Nev1)  # t_sink, d_sink, d_source, ev_sink, ev_source
+
+  kinematics:
+    boost_direction: z               # Wilson line along z
+    momentum_list: [-2, -3, -4, -5, -6]  # Pz in units of 2π/L
+    Px: 0
+    Py: 0
+
+  interpolator:
+    element: _Cg5g4                  # Cγ₅γ₄
+    dirac_structure: |
+      Γ₁ = gamma(7) @ gamma(4) = γ₃γ₁·γ₄
+      Γ₂ = gamma(7) @ gamma(4) = γ₃γ₁·γ₄
+      where gamma(7) = γ₃γ₁ = -γ₂γ₄γ₅  (charge conjugation × γ₅)
+
+    parity_projectors:
+      P₊: "0.5 * (γ₀ + γ₄)"          # Positive parity
+      P₋: "0.5 * (γ₀ - γ₄)"          # Negative parity
+
+measurement:
+  correlators:
+    - name: proton_2pt_pp
+      type: two_point
+      wick_contraction: direct_minus_exchange
+      formula: |
+        C₂^{il}(t_snk, t_src) = Φ_{abc}(t_snk) · τ^{ad}_{gi} · (ΓτΓ)^{be}_{gj}
+                               · τ^{cf}_{il} · Φ^*_{def}(t_src)     [Direct]
+                             - Φ_{abc}(t_snk) · τ^{af}_{gl} · (ΓτΓ)^{be}_{gj}
+                               · τ^{cd}_{ij} · Φ^*_{def}(t_src)     [Exchange]
+
+        where:
+          Φ_{abc}(P) = Σ_x e^{-iP·x} ε_{ijk} v_i^a(x) v_j^b(x) v_k^c(x)  [VVV block]
+          τ(t_snk, t_src) = perambulator
+
+    - name: proton_2pt_pp_parity_projected
+      type: parity_projection
+      formula: |
+        C₂^{pp}(t_snk, t_src) = Tr[P₊ · C₂(t_snk, t_src)]
+        Boundary sign: C₂^{pp}(t_snk, t_src) *= -1 when t_snk < t_src
+
+    - name: proton_meff_cosh
+      type: effective_mass
+      formula: |
+        a·m_eff(t) = arccosh( [C(t-1) + C(t+1)] / [2·C(t)] )
+        m_eff(t) [GeV] = a·m_eff(t) × 0.1973 / 0.1053
+
+output:
+  raw_contraction:
+    path: "artifacts/twopt_slice_pp_Px{Px}Py{Py}Pz{Pz}_eginphase{mom_smear}{element}_contract_conf{conf_id}.npy"
+    shape: [72, 72, 4, 4]
+    dtype: complex128
+
+  parity_projected:
+    path: "artifacts/twopt_slice_pp_Px{Px}Py{Py}Pz{Pz}_eginphase{mom_smear}{element}_nopol_ss_conf{conf_id}.npy"
+    shape: [72, 72]
+    dtype: float64
+
+  effective_mass:
+    path: "artifacts/meff_Pz{Pz}_conf{conf_id}.npz"
+    keys: [meff_gev, C2pt_1d]
+
+  plots:
+    - "plots/meff_Pz{Pz}_{element}_conf{conf_id}.pdf"    # C2pt + meff dual panel
+    - "plots/raw_Pz{Pz}_comparison.pdf"                   # Gen vs Ref scatter
+    - "plots/pp_Pz{Pz}_comparison.pdf"                    # PP comparison
+
+  reference_data:
+    raw: >
+      /public/group/lqcd/donghx/2pt_Result/
+      beta6.20_mu-0.2770_ms-0.2400_L24x72/momsmear-2z/{conf_id}/
+      twopt_slice_pp_Px0Py0Pz{Pz}_eginphase-2_Cg5g4_contract_conf{conf_id}.npy
+    pp: >
+      /public/group/lqcd/donghx/2pt_Result/
+      beta6.20_mu-0.2770_ms-0.2400_L24x72/momsmear-2z/{conf_id}/
+      twopt_slice_pp_Px0Py0Pz{Pz}_eginphase-2_Cg5g4_nopol_ss_conf{conf_id}.npy
+
+extras:
+  vvv_caching: true                 # Cache VVV blocks to avoid recomputation
+  time_separation_cut: [2, 32]      # Only contract 2 ≤ deltat ≤ 32
+  layer_slicing: true               # x-layer slicing for GPU memory
+  opt_einsum: true                  # Use opt_einsum.contract for acceleration

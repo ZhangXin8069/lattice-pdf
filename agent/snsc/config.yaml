@@ -1,0 +1,31 @@
+workflow:
+  executor_static_check_rounds: 1
+  executor_dynamic_test_rounds: 1
+
+script:
+  shell: /bin/bash
+
+slurm:
+  partition: cpu6248R,cpueicc,i72c512g
+  nodes: 1
+  gres: ""
+  ntasks_per_node: 1
+  ntasks_per_socket: 1
+  exclusive: false
+
+ensemble:
+  preset: C24P29
+
+runtime:
+  module_purge: false
+  modules: []
+  exports:
+    OMP_NUM_THREADS: "1"
+    MKL_NUM_THREADS: "1"
+    OPENBLAS_NUM_THREADS: "1"
+    NUMEXPR_NUM_THREADS: "1"
+  activate: source /public/home/zhangxin/miniconda3/etc/profile.d/conda.sh && conda activate zhangxin-snsc
+  resource_path: ~/.cache
+  launch_mpi: ""
+  source:
+    - source /public/home/zhangxin/miniconda3/etc/profile.d/conda.sh && conda activate zhangxin-snsc

@@ -207,15 +207,149 @@ Agent-level skills in `agent/.claude/skills/`:
 | `generate-and-update` | Unified compile of all LaTeX docs + run Python workflow |
 | `update-deps-docs` | Update three dependency-library PDFs |
 
+## Unified Workflow Scripts (`snsc/`)
+
+The `snsc/` directory contains unified, production-quality entry points for the gluon PDF pipeline, consolidating code from `examples/donghx/`, `examples/zhangxin/`, and `examples/huangcl/` into a single configurable CLI with three analysis modes.
+
+```bash
+# All three modes via main.py
+python snsc/main.py --help
+
+# Mode 1: PDF (full LaMET pipeline, 13 optional steps)
+python snsc/main.py --analysis-type pdf --steps 1,2,3,6 --xp numpy --ensemble L32x64 \
+    --conf-start 20000 --conf-num 1 --gauge-file /path/to/config.dat
+
+# Mode 2: proton-2pt (distillation, VVV + Wick contraction, matches donghx DCU code)
+python snsc/main.py --analysis-type proton-2pt --Nt 72 --Nx 24 \
+    --Pz-list "-2,-3,-4,-5,-6" --conf-start 46000 --element _Cg5g4
+
+# Mode 3: 2pt (effective mass from IOG data, matches main-2pt.py)
+python snsc/main.py --analysis-type 2pt --Nt 72 --Nx 24 --alttc 0.1053 \
+    --conf-start 10050 --conf-step 50 --conf-num 52
+
+# Slurm submission (always submit from snsc/ directory)
+cd snsc
+sbatch sbatch.sh          # PDF full pipeline (CPU)
+sbatch sbatch-2pt.sh      # Proton 2pt distillation (CPU)
+```
+
+Key features:
+- `--xp numpy|cupy` for backend selection, `--dtype complex64|complex128`
+- Per-step wall time + peak memory tracking via `Timer` context manager
+- Automatic VVV caching (`.npy` in output dir — skip recomputation)
+- Read/generate/compare paths for 2pt, 3pt, VVV, OPE data
+- Reference data comparison with max/mean absolute+relative diff metrics + scatter/histogram plots
+- Cosh effective mass extraction from 2pt with plateau estimation
+- Ensemble presets for all 6 lattice geometries + L64x128
+- Timestamped output: `snsc/output_YYYYMMDD_HHMMSS/{data/, plots/, run_config.json}`
+- Default conda env: `source /public/home/zhangxin/miniconda3/etc/profile.d/conda.sh && conda activate zhangxin-snsc`
+
+**Slurm**: Both `sbatch.sh` and `sbatch-2pt.sh` use `#SBATCH --chdir=/public/home/zhangxin/lattice-pdf/snsc` so the working directory is always correct regardless of where `sbatch` is invoked. Slurm stdout/err goes to `snsc/logs/*_%j.{out,err}`; application logs go to `output_*/run.log`.
+
+**Dependencies** (proton-2pt mode): requires `opt_einsum`, `numpy`, `matplotlib`. The 2pt mode additionally requires the compiled `examples/zhangxin/iog_reader/iog.so` and `include.py` from `examples/zhangxin/`.
+
 ## AI Agent Submodules (`agent/`)
 
 Three git submodules for AI-driven lattice QCD research:
 
 | Submodule | Path | Description |
 |-----------|------|-------------|
-| **LQCD_Master** | `agent/LQCD_Master` | Translates natural-language physics requests into executable PyQUDA programs and Slurm submission scripts. Planner→Executor pipeline with human-in-the-loop checkpoints. |
-| **lamet-agent** | `agent/lamet-agent` | Python-first LaMET workflow framework. Runs full 5-stage analysis (correlator → renormalization → Fourier → matching → extrapolation) via LLM-driven agentic stages. |
+| **LQCD_Master** | `agent/LQCD_Master` | Natural language → PyQUDA programs + Slurm scripts. Planner→Executor pipeline with checkpoints. |
+| **lamet-agent** | `agent/lamet-agent` | LaMET analysis framework. 5-stage agentic pipeline (correlator→renorm→Fourier→matching→extrapolation). Uses manifest JSON to define workflows, pydantic-validated. |
 | **PyQUDA** | `agent/PyQUDA` | Python wrapper for QUDA (HMC, gauge/fermion smearing, gradient flow, multigrid). |
+
+### LQCD_Master Usage
+
+```bash
+cd agent/LQCD_Master
+
+# Interactive mode: describe the physics task in natural language
+python run.py
+
+# Non-interactive with task file
+python run.py --task task.txt --non-interactive
+python run.py --task "Compute proton 2pt with momentum Pz=3 on L32x64 ensemble"
+
+# Test mode: generate artifacts without submitting jobs
+python run.py --task "..." --test
+
+# List available skills
+python run.py --list-skills
+```
+
+**Architecture**: `run.py` → `WorkflowOrchestrator` → `PlannerAgent` (generates plan from NL task) → `ExecutorAgent` (generates PyQUDA code + Slurm scripts). Output goes to `runs/<timestamp>/`. Uses `core_architecture/` and `utils/` modules; relies on `prompt_toolkit` for interactive input and a `.env` file for LLM API keys.
+
+### lamet-agent Usage
+
+```bash
+cd agent/lamet-agent
+
+# Validate a manifest
+lamet-agent validate path/to/manifest.json
+
+# Interactive planning (review/repair a manifest before running)
+lamet-agent plan manifest.json --backend api --model deepseek/deepseek-chat
+
+# Run a workflow (staged agent loop)
+lamet-agent run manifest.json --backend api --model deepseek/deepseek-chat \
+    --max-tool-steps 40 --report-language en
+```
+
+**Manifest structure**: JSON with `metadata` (run_id, root_directory, stages), `inputs` (correlators/artifacts/kernels with data_paths, ensemble, momenta, volume), and `stages` (per-stage defaults + jobs). Schema enforced by pydantic in `manifest.py`. Correlator data is read as HDF5/NetCDF via `core/data.py`. Effective mass uses `core/plotting.py` (cosh meff, publication-style figures with Times New Roman + STIX math).
+
+**Stages**: `correlator_analysis` (2pt ground-state fitting, meff plots), `renormalization` (hybrid self-renormalization), `fourier_transform`, `perturbative_matching`, `extrapolation`, `review`. Each stage has `functions.py` (computation), `prompts.py` (LLM prompts), `skills.py` (tool definitions).
+
+### agent/snsc/ — LQCD_Master + lamet-agent 联合流水线
+
+Bridge directory running the proton-2pt distillation pipeline via both agent frameworks. Equivalent functionality to `snsc/sbatch-2pt.sh` but with agent-driven workflow orchestration and publication-quality analysis.
+
+```
+agent/snsc/
+├── run.py                              # 主入口 (5-phase orchestration)
+├── manifest.json                       # lamet-agent correlator manifest
+├── sbatch.sh                           # Slurm 提交脚本
+├── skills/proton_2pt_distillation/     # LQCD_Master 技能定义
+│   └── SKILL.md                        # 蒸馏工作流描述
+├── artifacts/                          # HDF5 数据 (lamet-agent 兼容)
+├── runs/                               # 时间戳输出目录
+└── logs/                               # Slurm 输出日志
+```
+
+**5-Phase Pipeline:**
+
+| Phase | Framework | Description |
+|-------|-----------|-------------|
+| 1-2 | LQCD_Master Planner→Executor | NL task → structured plan + code generation |
+| 3 | snsc/main.py | Distillation computation (eigvecs→VVV→Wick→2pt) |
+| 4 | HDF5 Bridge | .npy output → lamet-agent-compatible HDF5 |
+| 5 | lamet-agent | Effective mass fitting + publication plots |
+
+```bash
+cd agent/snsc
+
+# 完整流水线 (蒸馏 + lamet meff 分析)
+python run.py --conf-id 46000 --Pz-list "-2,-3,-4,-5,-6"
+
+# 仅蒸馏
+python run.py --distillation-only --conf-id 46000
+
+# 仅 lamet 分析 (需已有 HDF5)
+python run.py --lamet-only --h5-path artifacts/proton_2pt.h5
+
+# 含 LQCD_Master 规划 (需要 .env 配置 LLM API)
+python run.py --task "Compute proton 2pt on L24x72 ensemble, Pz=-2..-6"
+
+# Slurm 提交
+sbatch sbatch.sh
+sbatch --export=ALL,CONF_ID="46000" sbatch.sh
+```
+
+**Key architectural decisions:**
+- Reuses `snsc/main.py` for distillation computation (not duplicating code)
+- lamet-agent manifest uses `resample_mode: "jk"` (jackknife) for error analysis
+- Default `--skip-plan` on Slurm to avoid LLM costs in production
+- HDF5 Bridge converts (Nt,Nt) parity-projected 2pt → (Lt, n_cfg) complex format lamet-agent expects
+- lamet-agent does correlator_analysis stage with `fitting_form: "NonBreit"` for multi-momentum independent fits
 
 ```bash
 # Clone with submodules

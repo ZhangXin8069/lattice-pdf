@@ -1,0 +1,350 @@
+task:
+  name: proton_distillation_2pt_Cg5g4
+  description: >
+    Compute the proton two-point correlation function using the distillation
+    (Laplacian-Heaviside) method on the C24P29 ensemble (24^3×72, beta=6.20,
+    a=0.1052 fm). Reads Nev=100 Laplace eigenmodes and precomputed momentum-smeared
+    perambulators. Constructs VVV baryon blocks Φ_{ijk}(P,t) = Σ_x e^{-iP·x}
+    ε_{abc} v_i^a v_j^b v_k^c (momentum-projection phase only; the smearing phase
+    is already baked into the perambulators). Performs Wick contraction (direct
+    minus exchange) with external spin indices σ' (sink) and σ (source), applying
+    the Cg5g4 Dirac projector Γ = γ₃γ₁γ₄ at the sink and its conjugate
+    Γ̄ = −Cg5g4 at the source. The raw output is a complex (Nt,Nt,4,4) matrix
+    C_{σ'σ}. Applies two-sided parity projection P₊ = (I+γ₄)/2 as
+    C_pp = Re Tr[P₊ C P₊^†]. Applies anti-periodic boundary sign correction
+    for the three-quark baryon state. Scans five boost momenta
+    Pz = −2,−3,−4,−5,−6 (units of 2π/L). Extracts effective masses via the
+    arccosh method and compares with reference data.
+  task_mode: freeform
+
+ensemble:
+  preset: C24P29
+  cfg_path: /public/share/weiwang/clqcd/beta6.20_mu-0.2770_ms-0.2400_L24x72/Configurations/Original/beta6.20_mu-0.2770_ms-0.2400_L24x72_cfg_{n_cfg}.lime
+  dimensions: [24, 24, 24, 72]
+  boundary_conditions:
+    spatial: periodic
+    temporal: anti-periodic
+  lattice_spacing: 0.1052
+  anisotropy: 1.0
+  quark_mass:
+    light: -0.277
+    strange: -0.2356
+    charm: 0.4159
+    bottom: 1.5
+  xi_0: 1.0
+  clover: 1.160920226
+  multigrid: [[6, 6, 6, 3], [4, 4, 4, 6]]
+  mpi_num: 4
+  process_grid: [1, 1, 1, 4]
+
+physics:
+  observables: []
+  hadrons: []
+  propagators: []
+
+measurement:
+  correlators: []
+
+output:
+  format: npy
+  metadata: true
+
+freeform_plan: |
+  ## Physics Goal
+  Compute the proton two-point correlation function C₂(t_snk, t_src) at five
+  non-zero boost momenta Pz = −2, −3, −4, −5, −6 (units of 2π/L_s, L_s=24)
+  using the distillation (Laplacian-Heaviside) framework with Nev=100 eigenmodes
+  of the gauge-covariant 3D Laplace operator on each time slice.  The target
+  ensemble is C24P29 (24³×72, β=6.20, a≈0.1052 fm, m_π≈340 MeV).
+
+  The interpolating operator uses the Cg5g4 Dirac structure (Γ ≡ γ₃γ₁γ₄ in the
+  DeGrand-Rossi Euclidean Dirac basis) for the third ("free") quark:
+
+    O_p(x) = ε_{abc} (u^{Ta}(x) Cγ₅ d^b(x)) (Γ u(x))^c
+
+  The conjugate operator at the source carries Γ̄ ≡ γ₄Γ^†γ₄ = −Γ = −Cg5g4
+  (proved in DGR: γ_μ^† = γ_μ for all μ; Γ^† = γ₄γ₁γ₃ = −γ₃γ₁γ₄ = −Γ;
+  γ₄ anticommutes with γ₁,γ₃ so γ₄Γγ₄ = Γ; hence Γ̄ = γ₄(−Γ)γ₄ = −Γ).
+
+  ## Method — Distillation
+  Distillation defines a smearing operator □(t) = V(t)V^†(t) where V(t) is the
+  (L_s³×N_c)×Nev matrix whose columns are the lowest Nev eigenvectors of
+  −∇²_{cov}(t).  Quark propagation is encoded in perambulators:
+
+    τ^{kl}_{αβ}(t_f, t_i) = v^{(k)†}(t_f) S_{αβ}(t_f, t_i) v^{(l)}(t_i)
+
+  where S is the full (clover-improved Wilson) quark propagator, k,l label
+  eigenmodes, and α,β are Dirac spin indices.  Perambulators are precomputed
+  with momentum smearing (mom_smear=−2, phase=2) and stored as complex arrays
+  of shape (Nt, Nt, 4, 4, Nev, Nev).
+
+  ## Data Sources
+  1. Laplace eigenvectors (Nev=100):
+     /public/group/lqcd/eigensystem/beta6.20_mu-0.2770_ms-0.2400_L24x72/46000/
+     Expected format: one file per time slice, shape (L_s³*N_c, Nev) complex.
+  2. Momentum-smeared perambulators (light quark, mom_smear=−2, phase=2):
+     /public/home/sunp/sunpeng_new_disk/mom_smear_perambulators/beta6.20_mu-0.2770_ms-0.2400_L24x72/output_dir_data/mz2_my0_mx0/46000/
+     Expected format: (Nt, Nt, 4, 4, Nev, Nev) complex per flavour.
+  3. Reference 2pt data for validation:
+     /public/group/lqcd/donghx/2pt_Result/beta6.20_mu-0.2770_ms-0.2400_L24x72/momsmear-2z/46000/
+
+  ## Algorithm Steps
+
+  ### Step 0 — Data loading and format validation
+  - Load Laplace eigenvectors v_i^a(x,t) for all Nt=72 time slices, Nev=100 modes.
+    Colour index a ∈ {0,1,2}, spatial index x runs over 24³ sites.
+  - **Format check**: print shapes and dtypes of loaded eigenvector and
+    perambulator arrays.  Abort with a clear error message if they do not
+    match the expected shapes:
+      * Eigenvectors: (L_s³×N_c, Nev) = (13824, 100) per time slice.
+      * Perambulators: (Nt, Nt, 4, 4, Nev, Nev) = (72, 72, 4, 4, 100, 100).
+  - **Gamma basis verification**: the plan assumes the DeGrand-Rossi (DGR)
+    Euclidean Dirac basis, in which all γ_μ (μ=1,2,3,4,5) are hermitian,
+    γ₀ = I_{4×4}, C = γ₂γ₄, and Cγ₅ = γ₂γ₄γ₅ = [[−iσ₂,0],[0,−iσ₂]].
+    If the perambulators were computed in a different gamma convention
+    (e.g. Chroma's non-relativistic or UKQCD basis), insert the appropriate
+    basis-rotation matrices before all Dirac algebra.  Check by verifying
+    that γ₅ is diagonal in the perambulator spin space: for a perambulator
+    at rest, Tr[γ₅ τ] should be small (~O(a)) for pseudoscalar channels.
+
+  ### Step 1 — Construct VVV baryon blocks (momentum projection only, no extra smearing)
+  The momentum-smearing phase e^{i ζ·y} with ζ = −2×(2π/24) ẑ is already baked
+  into the perambulators during their construction (applied to source eigenvectors).
+  At the sink, the VVV block uses the unsmeared eigenvectors with only the
+  momentum-projection phase for the desired boost momentum Pz:
+
+    Φ_{ijk}(Pz, t) = Σ_x e^{−i Pz·x} ε_{abc} v_i^a(x,t) v_j^b(x,t) v_k^c(x,t)
+
+  where Pz = n_P × (2π/L_s) ẑ with n_P ∈ {−2, −3, −4, −5, −6}, ε_{abc} is
+  the Levi-Civita symbol, and i,j,k ∈ [0, Nev−1].  The 6-term Levi-Civita
+  contraction means the sum over colour permutations:
+
+    ε_{abc} v_i^a v_j^b v_k^c =
+      v_i^0 v_j^1 v_k^2 + v_i^1 v_j^2 v_k^0 + v_i^2 v_j^0 v_k^1
+      − v_i^0 v_j^2 v_k^1 − v_i^1 v_j^0 v_k^2 − v_i^2 v_j^1 v_k^0
+
+  Note: the momentum-smearing phase e^{i ζ·x} is NOT applied at the sink.
+  Applying it would effectively change the momentum projection to Pz−ζ instead
+  of Pz, producing wrong correlators for all Pz except the accidental
+  cancellation at Pz=−2 (where Pz=ζ).
+
+  Output: Φ_{ijk}(Pz, t) — complex array of shape (Nev, Nev, Nev, Nt).
+  Compute and store one Φ per Pz value.
+  Memory: Nev³ × Nt × 16 bytes ≈ 100³ × 72 × 16 ≈ 1.15 GB per momentum.
+
+  ### Step 2 — Wick contraction (direct minus exchange) with external spin indices
+
+  The raw spin matrix C_{σ'σ}(t_snk, t_src; Pz) with external sink index σ'
+  and external source index σ (both ∈ {0,1,2,3}) is:
+
+    C_{σ'σ} = Σ_{ijk,i'j'k'} Φ_{ijk}(Pz,t_snk) Φ*_{i'j'k'}(Pz,t_src)
+      × (Cγ₅)_{αβ} (Cγ₅)_{α'β'}
+      × [ τ_{ii'}^{αα'}(t_snk,t_src) τ_{jj'}^{ββ'}(t_snk,t_src) τ_{kk'}^{γγ'}(t_snk,t_src)      — direct
+          − τ_{ik'}^{αγ'}(t_snk,t_src) τ_{jj'}^{ββ'}(t_snk,t_src) τ_{ki'}^{γα'}(t_snk,t_src) ]  — exchange
+      × (Cg5g4)_{σ'γ} (−Cg5g4)_{γ'σ}
+
+  where:
+    - Γ_{σ'γ} = (Cg5g4)_{σ'γ} projects the sink perambulator spin index γ
+      of the "free" (third) quark onto the external sink index σ'.
+    - Γ̄_{γ'σ} = (−Cg5g4)_{γ'σ} projects the source perambulator spin index γ'
+      onto the external source index σ.
+    - All repeated indices α,β,γ,α',β',γ',i,i',j,j',k,k' are summed.
+    - (Cγ₅) is the diquark structure at both sink and source:
+      in DGR, Cγ₅ = γ₂γ₄γ₅, which is symmetric (Cγ₅)^T = Cγ₅.
+
+  **Explanation of external spin indices**: the original (flawed) formula
+  contracted γ' and γ directly through (Cg5g4)_{γ'γ}, producing a scalar.
+  The corrected formula introduces distinct external indices σ' (sink) and σ
+  (source) and applies the projector as an outer product, yielding a genuine
+  (4×4) matrix per (t_snk, t_src).
+
+  **Exchange term and index relabeling**: After the i↔k relabeling in the
+  exchange term (which flips the sign of ε_{ijk} → −ε_{kji} and cancels the
+  explicit minus sign), the "free" quark indices become sink=γ and source=γ',
+  identical to the direct term.  Therefore the same Γ_{σ'γ} Γ̄_{γ'σ} outer
+  product applies to both terms.
+
+  ### Step 3 — Staged contraction algorithm (memory-feasible)
+
+  Direct O(Nev^6) contraction is infeasible (~10^12 ops per time pair).
+  A practical staged algorithm using numpy einsum with optimize='optimal':
+
+  **Direct term**:
+  ```python
+  # tau: (4, 4, Nev, Nev)  — perambulator for one (t_snk, t_src)
+  # Phi_snk, Phi_src: (Nev, Nev, Nev)  — VVV blocks
+  # Cg5: (4, 4)  — Cγ₅ matrix
+  # Cg5g4: (4, 4)  — Γ = γ₃γ₁γ₄
+  # neg_Cg5g4: (4, 4)  — Γ̄ = −Cg5g4
+
+  C_direct = np.einsum(
+      'ijk,IJK,iIaA,jJbB,kKcC,ab,AB,Sc,cT->ST',
+      Phi_snk, np.conj(Phi_src),
+      tau, tau, tau,
+      Cg5, Cg5,
+      Cg5g4, neg_Cg5g4,
+      optimize='optimal'
+  )
+  ```
+
+  **Exchange term**:
+  ```python
+  C_exch = np.einsum(
+      'ijk,IJK,iKcA,jJbB,kIaC,ab,AB,Sc,cT->ST',
+      Phi_snk, np.conj(Phi_src),
+      tau, tau, tau,
+      Cg5, Cg5,
+      Cg5g4, neg_Cg5g4,
+      optimize='optimal'
+  )
+  ```
+
+  C_raw = C_direct − C_exch  # shape (4, 4), complex128
+
+  The `optimize='optimal'` setting lets numpy find a contraction path that
+  minimizes intermediate tensor sizes.  With Nev=100, typical peak memory
+  is 40–80 GB.  For machines with less RAM, a two-stage pre-summation can
+  be employed:
+
+  **Memory-reduced two-stage variant**:
+  Stage 1 — pre-sum over i,i' (O(Nev^5) per j,k,j',k'):
+    X_{jkj'k'}^{αβγβ'} = Σ_{i,i',α'} Φ_{ijk} Φ*_{i'j'k'} τ_{ii'}^{αα'} (Cγ₅)_{αβ} (Cγ₅)_{α'β'}
+    [Shape: (Nev,Nev,Nev,Nev,4,4,4,4) — too large if stored explicitly.]
+
+  A better memory-reduced strategy uses iterative einsum with intermediate
+  contractions on disk or on GPU:
+    T1_{i,α,α',j',k'} = Σ_{i'} τ_{ii'}^{αα'} Φ*_{i'j'k'}     # (Nev,4,4,Nev,Nev)
+    T2_{j,k,α,α',j',k'} = Σ_i Φ_{ijk} T1_{i,α,α',j',k'}   # (Nev,Nev,4,4,Nev,Nev)
+  Then complete the diquark and third-quark contractions in a second stage.
+
+  Note: for a single configuration on a workstation with ≥128 GB RAM,
+  the single-einsum approach with optimize='optimal' is recommended.
+
+  ### Step 4 — Dirac projection and raw output
+  After Step 3, C_raw has shape (Nt, Nt, 4, 4), complex128.  This is the
+  raw contraction matrix with sink projector Cg5g4 and source projector
+  −Cg5g4 applied.  Save as:
+    proton_C2pt_raw_Pz{nP}.npy  (shape (72, 72, 4, 4), complex128)
+
+  ### Step 5 — Two-sided parity projection
+  P₊ = (γ₀ + γ₄)/2 = (I_{4×4} + γ₄)/2
+
+  The parity-projected correlator is:
+    C_{pp}(t_snk, t_src) = Re Tr[ P₊ @ C_raw(t_snk, t_src) @ P₊^† ]
+
+  Since P₊^† = P₊ in DGR (γ₀ = I and γ₄ are both hermitian), this
+  simplifies to:
+    C_{pp} = Re Tr[ P₊ @ C_raw @ P₊ ]
+
+  The two-sided projection is essential: a single-sided Tr[P₊ C] mixes
+  parity channels when the source already carries a non-trivial spin
+  structure (the −Cg5g4 projector).  Two-sided projection correctly
+  isolates the positive-parity component at both source and sink.
+
+  The result is a real Nt×Nt array.  Save as:
+    proton_C2pt_pp_Pz{nP}.npy  (shape (72, 72), float64)
+
+  ### Step 6 — Boundary sign correction
+  Fermion fields obey anti-periodic temporal BC: ψ(t+Nt) = −ψ(t).  For a
+  baryon (three quarks), the overall BC is (−1)³ = −1 (anti-periodic).
+  Thus the backward-propagating state enters with a relative minus sign:
+
+    C(t_snk, t_src) = C_forward(Δt) − C_backward(Nt − Δt)
+
+  where Δt = (t_snk − t_src) mod Nt ∈ [0, Nt−1].
+
+  Build the folded correlator:
+    C_folded(Δt) = 0.5 × [C_{pp}(t_src+Δt, t_src) − C_{pp}(t_src+Nt−Δt, t_src)]
+
+  for Δt = 1, 2, …, Nt/2−1, where indices are taken modulo Nt.  The minus
+  sign before the second term accounts for the anti-periodic backward state.
+  C_folded(0) is taken from the un-folded correlator directly.
+
+  Note: this folding is standard for baryons and is required before extracting
+  effective masses.  The backward-state contamination with flipped sign is an
+  inherent feature of anti-periodic temporal BC; the folding isolates the
+  forward-propagating contribution up to exponentially suppressed backward
+  contamination at moderate Δt.
+
+  ### Step 7 — Effective mass (arccosh method)
+  From the folded parity-projected correlator C_folded(Δt):
+
+    a·m_eff(Δt) = arccosh( [C_folded(Δt−1) + C_folded(Δt+1)] / [2·C_folded(Δt)] )
+
+  for Δt = 2,…, Nt/2−2.  The arccosh formula is derived from the single-exponential
+  ansatz C(Δt) ∝ cosh(a·m·(Δt − Nt/2)) and is the standard choice for
+  distillation-based analyses.
+
+  Save as: proton_meff_Pz{nP}.npy  (shape (Nt,), float64, with NaN outside valid range)
+
+  Statistical note: since only one configuration is used, there is no ensemble
+  error.  The quoted uncertainty should be clearly labelled as "single-configuration
+  time-slice fluctuation" (e.g. from jackknife over source time translations)
+  rather than a proper statistical error.
+
+  ### Step 8 — Comparison with reference data
+  Load reference correlator from:
+    /public/group/lqcd/donghx/2pt_Result/beta6.20_mu-0.2770_ms-0.2400_L24x72/momsmear-2z/46000/
+
+  The expected reference file format is a numpy .npy file containing the
+  parity-projected (Nt,Nt) correlator or a folded 1D correlator.  Compare:
+    - Point-by-point relative difference: |C_new − C_ref| / |C_ref|
+    - Effective mass agreement within the plateau region
+    - Chi²-like agreement metric: Σ (C_new − C_ref)² / σ²_ref (if errors available)
+
+  ### Step 9 — Publication-quality plots
+  Generate the following figures (one per momentum Pz):
+    (a) C2pt on log scale vs Δt:  log|C_folded(Δt)| with reference overlay.
+    (b) Effective mass a·m_eff(Δt) vs Δt:  plateau identification, reference overlay.
+    (c) Scatter plot: C_new vs C_ref for all Δt in the plateau region.
+  Use matplotlib with LaTeX rendering, consistent colour scheme, error bands
+  (if jackknife errors are available from multi-source averaging).
+  Save as: plots/proton_C2pt_Pz{nP}.pdf, plots/proton_meff_Pz{nP}.pdf,
+           plots/proton_scatter_Pz{nP}.pdf
+
+  ## Parameters Summary
+  - Ensemble: C24P29, 24³×72, β=6.20, a=0.1052 fm, clover c_sw=1.160920226
+  - Configuration: n_cfg=46000, single config (no ensemble averaging)
+  - Light quark mass: κ_l corresponding to m_π≈340 MeV
+  - Nev: 100 Laplace eigenmodes
+  - Momentum smearing: n_z=−2, n_x=0, n_y=0 (phase e^{i ζ·y} applied to
+    source eigenvectors during perambulator construction only; NOT reapplied
+    at the sink)
+  - Boost momenta: Pz = n_P × 2π/L_s, n_P ∈ {−2, −3, −4, −5, −6}
+  - Interpolator: Cg5g4 = γ₃ γ₁ γ₄ applied to third quark at sink;
+    Γ̄ = −Cg5g4 at source (DeGrand-Rossi Euclidean Dirac basis)
+  - Diquark structure: Cγ₅ (standard scalar diquark, symmetric)
+  - Parity projector: P₊ = (γ₀ + γ₄)/2, γ₀ = I_{4×4}, two-sided application
+  - Boundary condition: anti-periodic temporal for baryons (overall minus sign
+    for backward-propagating state)
+  - Effective mass: arccosh method on folded correlator
+  - Gamma matrices (DeGrand-Rossi):
+    γ_i = [[0, iσ_i], [−iσ_i, 0]] (i=1,2,3),
+    γ₄ = [[0, I], [I, 0]], γ₅ = [[I, 0], [0, −I]], γ₀ = I_{4×4},
+    C = γ₂γ₄ = diag(−iσ₂, iσ₂),
+    Cγ₅ = γ₂γ₄γ₅ = diag(−iσ₂, −iσ₂) [symmetric],
+    Cg5g4 = γ₃γ₁γ₄ = antidiag(−iσ₃σ₁, iσ₃σ₁) [anti-hermitian: (Cg5g4)^† = −Cg5g4].
+
+  ## Reasonable Completions
+  - Eigenvector file format: assumed numpy .npy (complex64/128), one file per
+    time slice named ev_%04d.npy, shape (L_s³×N_c, Nev) = (13824, 100).
+  - Perambulator file format: assumed HDF5 or numpy, key 'peram' or single .npy
+    per (t_snk, t_src), shape (4, 4, Nev, Nev) complex.
+  - Reference data format: assumed numpy .npy with shape (Nt, Nt) or (Nt,) folded.
+  - Single-configuration: no ensemble statistical averaging; jackknife over
+    time translations serves as a diagnostic only.
+  - Output directory: ./output/proton_distillation/
+  - Plot directory: ./plots/
+  - Python environment: numpy, scipy, matplotlib, h5py, mpi4py (optional).
+  - The einsum contraction with optimize='optimal' is the recommended path;
+    for machines with <64 GB RAM, use the two-stage pre-summation strategy
+    described in Step 3.
+
+extras:
+  - "Distillation framework — no standard point-source or wall-source propagators"
+  - "Perambulators precomputed with momentum smearing (mom_smear=-2, phase=2) — smearing phase NOT reapplied at sink"
+  - "Single configuration (46000); multi-config averaging deferred to future work"
+  - "Cg5g4 = gamma_3 gamma_1 gamma_4 in DeGrand-Rossi Euclidean Dirac basis; source projector = -Cg5g4"
+  - "Two-sided parity projection: C_pp = Re Tr[P_plus @ C_raw @ P_plus]"
+  - "Effective mass via arccosh method on folded correlator with anti-periodic BC sign"
+  - "Contraction via numpy einsum with optimize='optimal'; memory-reduced two-stage fallback available"
