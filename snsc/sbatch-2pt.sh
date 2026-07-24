@@ -163,7 +163,8 @@ EXIT_CODE=${PIPESTATUS[0]}
 echo "==============================================" | tee -a "${LOG_FILE}"
 echo "  结束时间: $(date)" | tee -a "${LOG_FILE}"
 echo "  退出码: ${EXIT_CODE}" | tee -a "${LOG_FILE}"
-echo "  输出目录: ${CORR_NUCL_DIR}" | tee -a "${LOG_FILE}"
+echo "  生成数据: ${OUTPUT_DIR}/data/" | tee -a "${LOG_FILE}"
+echo "  参考对比: ${CORR_NUCL_DIR}" | tee -a "${LOG_FILE}"
 echo "  日志目录: ${OUTPUT_DIR}" | tee -a "${LOG_FILE}"
 echo "==============================================" | tee -a "${LOG_FILE}"
 

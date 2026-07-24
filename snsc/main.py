@@ -2794,6 +2794,8 @@ def run_proton_2pt_analysis(args: "argparse.Namespace") -> None:
     xp = np
 
     # ── 参数提取 ──────────────────────────────────────────
+    contract = get_contract(np)  # 嵌套函数通过闭包访问
+
     Nt = args.Nt
     Nx = args.Nx
     Nev  = getattr(args, 'Nev',  100)
