@@ -3009,13 +3009,30 @@ def run_proton_2pt_analysis(args: "argparse.Namespace") -> None:
         print(f"  动量 P = ({Pz}, {Py}, {Px})")
         print(f"{'─'*60}")
 
-        # ── 计算 VVV ──
-        t_vvv_start = time.perf_counter()
-        VVV_sink = compute_vvv_for_momentum(Mom)
-        t_vvv_end = time.perf_counter()
-        print(f"  VVV 计算总耗时: {t_vvv_end - t_vvv_start:.3f}s")
+        # ── 计算 VVV (先尝试读取已有缓存) ──
+        vvv_cache_file = f"{gen_dir}/VVV_Nev1{Nev1}_Px{Px}Py{Py}Pz{Pz}_conf{conf_id}.npy"
+        if os.path.exists(vvv_cache_file):
+            print(f"  [CACHE] 加载已有 VVV: {vvv_cache_file}")
+            VVV_sink = np.load(vvv_cache_file)
+        else:
+            t_vvv_start = time.perf_counter()
+            VVV_sink = compute_vvv_for_momentum(Mom)
+            t_vvv_end = time.perf_counter()
+            print(f"  VVV 计算总耗时: {t_vvv_end - t_vvv_start:.3f}s")
+            # 保存 VVV, 避免重复计算浪费
+            np.save(vvv_cache_file, VVV_sink)
+            print(f"  [SAVE] VVV 缓存: {vvv_cache_file}")
 
         # ── Wick 收缩 ──
+        # 先检查 perambulator 文件是否存在
+        peram_test = f"{peram_u_dir}/perams.{conf_id}.0.0"
+        if not os.path.exists(peram_test):
+            print(f"\n  [SKIP] Perambulator 文件不存在: {peram_test}")
+            print(f"  请检查 --peram-u-dir 参数路径是否正确。")
+            print(f"  当前路径: {peram_u_dir}")
+            # VVV 已缓存, 跳过收缩但继续下一个动量
+            continue
+
         contrac_nucl_matrix = np.zeros((Nt, Nt, 4, 4), dtype=complex)
         print(f"\n  Wick 收缩开始...")
 
@@ -3104,21 +3121,78 @@ def run_proton_2pt_analysis(args: "argparse.Namespace") -> None:
         print(f"  [GEN] PP: {gen_dir}/{pp_filename}")
         print(f"         shape={contrac_nucl_pp.shape}")
 
-        # ── 与参考数据对比 ──
-        _compare_2pt_result(
-            ref_corr_nucl_dir=ref_corr_nucl_dir,
-            gen_dir=gen_dir,
-            plot_dir=plot_dir,
-            has_ref=has_ref,
-            raw_filename=raw_filename,
-            pp_filename=pp_filename,
-            contrac_nucl_matrix=contrac_nucl_matrix,
-            contrac_nucl_pp=contrac_nucl_pp,
-            Px=Px, Py=Py, Pz=Pz,
-            mom_smear=mom_smear,
-            element=element,
-            conf_id=conf_id,
-        )
+        # ── 与参考数据对比 (文件不存在时跳过) ──
+        ref_raw_path = f"{ref_corr_nucl_dir}/{raw_filename}"
+        ref_pp_path  = f"{ref_corr_nucl_dir}/{pp_filename}"
+        ref_exists = (os.path.exists(ref_raw_path) or
+                      os.path.exists(ref_pp_path))
+
+        if ref_exists:
+            _compare_2pt_result(
+                ref_corr_nucl_dir=ref_corr_nucl_dir,
+                gen_dir=gen_dir,
+                plot_dir=plot_dir,
+                has_ref=True,
+                raw_filename=raw_filename,
+                pp_filename=pp_filename,
+                contrac_nucl_matrix=contrac_nucl_matrix,
+                contrac_nucl_pp=contrac_nucl_pp,
+                Px=Px, Py=Py, Pz=Pz,
+                mom_smear=mom_smear,
+                element=element,
+                conf_id=conf_id,
+            )
+        else:
+            print(f"  [COMPARE] 参考数据不存在, 跳过对比。")
+            print(f"     Raw: {ref_raw_path}")
+            print(f"     PP:  {ref_pp_path}")
+
+        # ── 有效质量提取与作图 ──
+        # 从 2pt 矩阵提取时间排序的关联函数 C(deltat)
+        # C(deltat) = mean_{t_src} contrac_nucl_pp[t_src+deltat, t_src]
+        # 取实部, 形状 (Nt,)
+        C2pt_1d = np.zeros(Nt, dtype=float)
+        for dt in range(Nt):
+            vals = []
+            for t_src in range(Nt):
+                t_snk = (t_src + dt) % Nt
+                vals.append(np.real(contrac_nucl_pp[t_snk, t_src]))
+            C2pt_1d[dt] = np.mean(vals)
+
+        # Cosh 有效质量: m_eff(t) = arccosh((C(t-1)+C(t+1))/(2*C(t)))
+        # 转换为物理单位: m_eff[GeV] = a*m_eff * (hbar*c)/a = a*m_eff * 0.1973/a[fm]
+        fm2GeV = 0.1973
+        alttc_val = getattr(args, 'alttc', 0.1053)
+        C_pos = np.abs(C2pt_1d) + 1e-30  # 保证正定
+        cosh_arg = (C_pos[2:] + C_pos[:-2]) / (2.0 * C_pos[1:-1])
+        # 截断到 arccosh 有效范围 (arg >= 1)
+        valid = cosh_arg >= 1.0
+        meff_lu = np.full(Nt - 2, np.nan)  # 格点单位
+        meff_lu[valid] = np.arccosh(cosh_arg[valid])
+        meff_gev = meff_lu * fm2GeV / alttc_val  # 物理单位 GeV
+
+        print(f"\n  有效质量 (cosh, a={alttc_val} fm):")
+        for t in range(1, min(Nt - 1, 16)):
+            print(f"     t={t:3d}  m_eff = {meff_gev[t-1]:.4f} GeV")
+
+        # 平台区估计
+        plateau_start = Nt // 4
+        plateau_end   = Nt // 2
+        plateau_mask  = ~np.isnan(meff_gev[plateau_start:plateau_end])
+        if np.any(plateau_mask):
+            pm = np.mean(meff_gev[plateau_start:plateau_end][plateau_mask])
+            print(f"  平台区 t∈[{plateau_start},{plateau_end}]: m_eff = {pm:.4f} GeV")
+
+        # 保存有效质量数据
+        np.savez(f"{gen_dir}/meff_Pz{Pz}_conf{conf_id}.npz",
+                  meff_gev=meff_gev, C2pt_1d=C2pt_1d, alttc=alttc_val)
+        print(f"  [GEN] Meff: {gen_dir}/meff_Pz{Pz}_conf{conf_id}.npz")
+
+        # 作图
+        if HAS_MPL and not args.no_plot:
+            _plot_proton_meff(meff_gev, C2pt_1d, plot_dir,
+                               Pz=Pz, Nt=Nt, alttc=alttc_val,
+                               element=element, conf_id=conf_id)
 
         print(f"  Pz={Pz} 完成。")
 
@@ -3131,6 +3205,61 @@ def run_proton_2pt_analysis(args: "argparse.Namespace") -> None:
         print(f"  参考数据: {ref_corr_nucl_dir}")
     print(f"  作图输出: {plot_dir}")
     print(f"{'═'*70}\n")
+
+
+def _plot_proton_meff(meff_gev: np.ndarray, C2pt_1d: np.ndarray,
+                       plot_dir: str, Pz: int, Nt: int, alttc: float,
+                       element: str, conf_id: str) -> None:
+    """画图: 质子 2pt 有效质量 + 关联函数双面板。
+
+    左面板: |C₂(deltat)| 对数图 (关联函数衰减)
+    右面板: m_eff(t) 有效质量平台 (cosh 方法)
+    风格参考 lamet-agent core/plotting.py。
+    """
+    if not HAS_MPL:
+        return
+
+    fm2GeV = 0.1973
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
+
+    # ── 左面板: 关联函数对数图 ──
+    dt_vals = np.arange(Nt)
+    C_abs = np.abs(C2pt_1d)
+    axes[0].semilogy(dt_vals, C_abs, 'o-', markersize=4, color='#4E79A7')
+    axes[0].set_xlabel(r"$\Delta t~/~a$", fontsize=14)
+    axes[0].set_ylabel(r"$|C_2(\Delta t)|$", fontsize=14)
+    axes[0].set_title(f"C2pt (Pz={Pz})", fontsize=14)
+    axes[0].grid(True, alpha=0.3, linestyle=':')
+    axes[0].tick_params(labelsize=12)
+
+    # ── 右面板: 有效质量 ──
+    t_meff = np.arange(1, Nt - 1)
+    valid = ~np.isnan(meff_gev)
+    axes[1].errorbar(t_meff[valid], meff_gev[valid],
+                      fmt='o', markersize=5, mfc='none', capsize=3,
+                      color='#E69F00', label='cosh meff')
+    axes[1].set_xlabel(r"$t~/~a$", fontsize=14)
+    axes[1].set_ylabel(r"$m_{\mathrm{eff}}~/~\mathrm{GeV}$", fontsize=14)
+    axes[1].set_title(f"Effective Mass (Pz={Pz})", fontsize=14)
+    axes[1].grid(True, alpha=0.3, linestyle=':')
+    axes[1].tick_params(labelsize=12)
+    axes[1].legend(fontsize=11)
+
+    # 平台区标记
+    ps, pe = Nt // 4, Nt // 2
+    if np.any(valid[ps:pe]):
+        pm = np.mean(meff_gev[ps:pe][valid[ps:pe]])
+        axes[1].axhline(y=pm, color='#D62728', linestyle='--', linewidth=1,
+                         label=f'plateau ({ps}–{pe}): {pm:.3f} GeV')
+        axes[1].axhspan(pm - 0.05*np.abs(pm), pm + 0.05*np.abs(pm),
+                         alpha=0.15, color='#D62728')
+        axes[1].legend(fontsize=11)
+
+    plt.tight_layout()
+    fig.savefig(f"{plot_dir}/meff_Pz{Pz}_{element}_conf{conf_id}.pdf",
+                bbox_inches='tight')
+    plt.close(fig)
+    print(f"  [PLOT] 有效质量图已保存: {plot_dir}/meff_Pz{Pz}_{element}_conf{conf_id}.pdf")
 
 
 def _compare_2pt_result(
