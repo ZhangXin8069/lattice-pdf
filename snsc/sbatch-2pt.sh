@@ -33,7 +33,7 @@
 # ============================================================================
 
 #SBATCH --job-name=proton_2pt
-#SBATCH --partition=math,cpu6248R,cpueicc,i72c512g
+#SBATCH --partition=cpu6248R,cpueicc,i72c512g
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
