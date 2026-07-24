@@ -31,15 +31,18 @@
 # ============================================================================
 # Slurm 作业配置 — 单 CPU 环境
 # ============================================================================
+# Slurm 日志写入脚本所在目录的 logs/ 子目录。
+# 请在 snsc/ 目录下提交:  cd snsc && sbatch sbatch-2pt.sh
+# ============================================================================
 
 #SBATCH --job-name=proton_2pt
-#SBATCH --partition=cpu6248R,cpueicc,i72c512g
+#SBATCH --partition=math,cpu6248R,cpueicc,i72c512g
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
 
-#SBATCH --output=/dev/null
-#SBATCH --error=/dev/null
+#SBATCH --output=logs/proton_2pt_%j.out
+#SBATCH --error=logs/proton_2pt_%j.err
 
 # ============================================================================
 # 环境设置

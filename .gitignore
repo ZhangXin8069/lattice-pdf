@@ -54,3 +54,6 @@ lib/*
 *.fdb_latexmk
 *.env
 ./refer/.*.log
+snsc/logs/*.out
+snsc/logs/*.err
+
