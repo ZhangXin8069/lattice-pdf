@@ -108,31 +108,32 @@ CORR_NUCL_DIR="${CORR_NUCL_DIR:-/public/group/lqcd/donghx/2pt_Result/beta6.20_mu
 # 构建参数并运行
 # ============================================================================
 
+# 使用 --flag=VALUE 形式 (等号连接), 避免 argparse 将空值解析为缺失参数
 ARGS=(
-    --analysis-type proton-2pt
-    --xp numpy
-    --output-dir "${OUTPUT_DIR}"
-    --Nt "${NT}"
-    --Nx "${NX}"
-    --Nev "${NEV}"
-    --Nev1 "${NEV1}"
-    --conf-start "${CONF_ID}"
-    --conf-step 1
-    --conf-num 1
-    --Px "${PX}"
-    --Py "${PY}"
-    --Pz "${PZ}"
-    --mom-smear "${MOM_SMEAR}"
-    --mom-smear-phase "${MOM_SMEAR_PHASE}"
-    --element "${ELEMENT}"
-    --eig-dir "${EIG_DIR}"
-    --peram-u-dir "${PERAM_U_DIR}"
-    --corr-nucl-dir "${CORR_NUCL_DIR}"
+    --analysis-type=proton-2pt
+    --xp=numpy
+    --output-dir="${OUTPUT_DIR}"
+    --Nt="${NT}"
+    --Nx="${NX}"
+    --Nev="${NEV}"
+    --Nev1="${NEV1}"
+    --conf-start="${CONF_ID}"
+    --conf-step=1
+    --conf-num=1
+    --Px="${PX}"
+    --Py="${PY}"
+    --Pz="${PZ}"
+    --mom-smear="${MOM_SMEAR}"
+    --mom-smear-phase="${MOM_SMEAR_PHASE}"
+    --element="${ELEMENT}"
+    --eig-dir="${EIG_DIR}"
+    --peram-u-dir="${PERAM_U_DIR}"
+    --corr-nucl-dir="${CORR_NUCL_DIR}"
 )
 
-# --Pz-list 仅在值非空时追加以避免 argparse 报错
+# Pz-list 仅在值非空时追加以避免 argparse 报错
 if [ -n "${PZ_LIST}" ]; then
-    ARGS+=(--Pz-list "${PZ_LIST}")
+    ARGS+=(--Pz-list="${PZ_LIST}")
 fi
 
 echo "==============================================" | tee -a "${LOG_FILE}"

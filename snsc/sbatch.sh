@@ -124,65 +124,65 @@ ALPHA_S="${ALPHA_S:-0.2}"
 MU_OVER_PZ="${MU_OVER_PZ:-1.0}"
 
 # ============================================================================
-# 构建命令行参数
+# 构建命令行参数 (使用 --flag=VALUE 形式, 避免 bash 传参歧义)
 # ============================================================================
 
 ARGS=(
-    --analysis-type "${ANALYSIS_TYPE}"
-    --xp "${XP}"
-    --steps "${STEPS}"
-    --dtype "${DTYPE}"
-    --output-dir "${OUTPUT_DIR}"
-    --Px "${PX}"
-    --Py "${PY}"
-    --Pz "${PZ}"
-    --conf-start "${CONF_START}"
-    --conf-step "${CONF_STEP}"
-    --conf-num "${CONF_NUM}"
-    --delta-z "${DELTA_Z}"
-    --z-dir "${Z_DIR}"
-    --alpha-s "${ALPHA_S}"
-    --mu-over-pz "${MU_OVER_PZ}"
+    --analysis-type="${ANALYSIS_TYPE}"
+    --xp="${XP}"
+    --steps="${STEPS}"
+    --dtype="${DTYPE}"
+    --output-dir="${OUTPUT_DIR}"
+    --Px="${PX}"
+    --Py="${PY}"
+    --Pz="${PZ}"
+    --conf-start="${CONF_START}"
+    --conf-step="${CONF_STEP}"
+    --conf-num="${CONF_NUM}"
+    --delta-z="${DELTA_Z}"
+    --z-dir="${Z_DIR}"
+    --alpha-s="${ALPHA_S}"
+    --mu-over-pz="${MU_OVER_PZ}"
 )
 
 # --- 系综预设 (可选) ---
 if [ -n "${ENSEMBLE}" ]; then
-    ARGS+=(--ensemble "${ENSEMBLE}")
+    ARGS+=(--ensemble="${ENSEMBLE}")
 fi
 
 # --- 手动格点参数 (不使用系综时) ---
 if [ -z "${ENSEMBLE}" ]; then
     ARGS+=(
-        --Nt "${NT}"
-        --Nx "${NX}"
-        --Nev "${NEV}"
-        --Nev1 "${NEV1}"
-        --mom-smear "${MOM_SMEAR}"
-        --mom-smear-phase "${MOM_SMEAR_PHASE}"
+        --Nt="${NT}"
+        --Nx="${NX}"
+        --Nev="${NEV}"
+        --Nev1="${NEV1}"
+        --mom-smear="${MOM_SMEAR}"
+        --mom-smear-phase="${MOM_SMEAR_PHASE}"
     )
 fi
 
 # --- 动量扫描 ---
 if [ -n "${PZ_LIST}" ]; then
-    ARGS+=(--Pz-list "${PZ_LIST}")
+    ARGS+=(--Pz-list="${PZ_LIST}")
 fi
 
 # --- 规范组态文件 ---
 if [ -n "${GAUGE_FILE}" ]; then
-    ARGS+=(--gauge-file "${GAUGE_FILE}")
+    ARGS+=(--gauge-file="${GAUGE_FILE}")
 fi
 
 # --- 读取路径 ---
-[ -n "${READ_2PT_DIR}" ] && ARGS+=(--read-2pt-dir "${READ_2PT_DIR}")
-[ -n "${READ_3PT_DIR}" ] && ARGS+=(--read-3pt-dir "${READ_3PT_DIR}")
-[ -n "${READ_VVV_DIR}" ] && ARGS+=(--read-VVV-dir "${READ_VVV_DIR}")
-[ -n "${READ_OPE_DIR}" ] && ARGS+=(--read-ope-dir "${READ_OPE_DIR}")
+[ -n "${READ_2PT_DIR}" ] && ARGS+=(--read-2pt-dir="${READ_2PT_DIR}")
+[ -n "${READ_3PT_DIR}" ] && ARGS+=(--read-3pt-dir="${READ_3PT_DIR}")
+[ -n "${READ_VVV_DIR}" ] && ARGS+=(--read-VVV-dir="${READ_VVV_DIR}")
+[ -n "${READ_OPE_DIR}" ] && ARGS+=(--read-ope-dir="${READ_OPE_DIR}")
 
 # --- 生成路径 ---
-[ -n "${GEN_2PT_DIR}" ] && ARGS+=(--gen-2pt-dir "${GEN_2PT_DIR}")
-[ -n "${GEN_3PT_DIR}" ] && ARGS+=(--gen-3pt-dir "${GEN_3PT_DIR}")
-[ -n "${GEN_VVV_DIR}" ] && ARGS+=(--gen-VVV-dir "${GEN_VVV_DIR}")
-[ -n "${GEN_OPE_DIR}" ] && ARGS+=(--gen-ope-dir "${GEN_OPE_DIR}")
+[ -n "${GEN_2PT_DIR}" ] && ARGS+=(--gen-2pt-dir="${GEN_2PT_DIR}")
+[ -n "${GEN_3PT_DIR}" ] && ARGS+=(--gen-3pt-dir="${GEN_3PT_DIR}")
+[ -n "${GEN_VVV_DIR}" ] && ARGS+=(--gen-VVV-dir="${GEN_VVV_DIR}")
+[ -n "${GEN_OPE_DIR}" ] && ARGS+=(--gen-ope-dir="${GEN_OPE_DIR}")
 
 # ============================================================================
 # 运行主脚本
