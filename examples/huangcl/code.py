@@ -5,7 +5,7 @@ import resource
 import matplotlib.pyplot as plt
 import numpy as np
 
-result_dir = "/public/home/huangcl/04_gluon_unpolarized_PDF/02_ratio/result"
+result_dir = "/public/home/zhangxin/lattice-pdf/examples/huangcl/result"
 
 
 conf_name = "beta6.20_mu-0.2770_ms-0.2400_L24x72"
@@ -69,7 +69,7 @@ def resample(corr, jack, Nsample):
 
 # load data
 for i in range(Nconf):
-    conf_id = 8200 + i * 200
+    conf_id = 6250 + i * 200 # 6200 -> 6250
     _corr[i] = np.load(
         f"/public/group/lqcd/donghx/2pt_Result/{conf_name}/momsmear2z/{conf_id}/twopt_slice_pp_Px{Px}Py{Py}Pz{Pz}_eginphase2_Cg5g4_nopol_ss_conf{conf_id}.npy"
     )

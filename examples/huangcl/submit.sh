@@ -20,7 +20,7 @@ export OPENBLAS_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 
 exe="code.py"
-log="0_.log"
+log=".log"
 
 . /public/home/huangcl/act_venv.sh
 
